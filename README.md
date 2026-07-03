@@ -1,7 +1,8 @@
 ```text
 Meloid = Melody + Monoid.
 
-This is a command-line music player fully in Haskell for in-depth music lovers, yet under development.
+This is a command-line music player fully in Haskell for in-depth music lovers, 
+yet under development.
 
 
 Roadmap
@@ -29,12 +30,18 @@ Roadmap
 
 Contributing
 
-You seem to have noticed that there are many things not yet crossed in the roadmap. Do you have any ideas ? Great! However, you need to follow the following guidelines before you submit the patch.
+You seem to have noticed that there are many things not yet crossed in the roadmap. 
+Do you have any ideas ? Great! However, you need to follow the following guidelines 
+before you submit the patch.
 
-- Please make sure the change you've made consistent with the code style in the project.
-- Any big changes? Please talk to me first. Let's talk in issues, discussions or even Discord groups.
-- Reliability is from a strong type system but also strengthened by every comment and documentation you make in your submission.
-- It is not recommended to make any structural change to the codes. It is more preferred to focus on one specific issue in each contribution.
+- Please make sure the change you've made consistent with the code style in the 
+project.
+- Any big changes? Please talk to me first. Let's talk in issues, discussions or even 
+Discord groups.
+- Reliability is from a strong type system but also strengthened by every comment 
+and documentation you make in your submission.
+- It is not recommended to make any structural change to the codes. It is more 
+preferred to focus on one specific issue in each contribution.
 - I hope all warnings are intolerable for you
 
 
