@@ -1,21 +1,106 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Image where
+{- | This module provides the low-level implementation of
+fine-grained album display and cache management.
+-}
+module Image (
+  prepareAlbumArtCacheDir,
+  ensureCachedAlbumArtBytes,
+  renderAlbumArt,
+) where
 
-import Common
 import Compat.Term qualified as Term
 import Control.Exception (IOException, try)
-import Control.Monad (void)
+import Control.Monad (unless, void)
 import Control.Monad.Except
 import Control.Monad.State (liftIO)
 import Control.Monad.Trans.Except
 import Data.ByteString qualified as BS
 import Data.ByteString.UTF8 qualified as UTF8
-import System.Directory (removeFile)
+import Numeric (showHex)
+import System.Directory (
+  XdgDirectory (XdgCache),
+  createDirectoryIfMissing,
+  doesFileExist,
+  getXdgDirectory,
+  removeFile,
+  renameFile,
+ )
 import System.Exit (ExitCode (..))
 import System.IO (hClose, hSetBinaryMode, openBinaryTempFile)
 import System.Process
+import Types
+
+{- | Prepare the album art cache directory.
+The directory is responsible for storing album art so that
+we can avoid extracting the same album art multiple times.
+-}
+prepareAlbumArtCacheDir :: IO FilePath
+prepareAlbumArtCacheDir = do
+  let fallbackDir = "/tmp/gaze-player/album-art"
+  preferredDir <- getXdgDirectory XdgCache "gaze-player/album-art"
+  (tryEnsure preferredDir :: IO (Either IOException ())) >>= \case
+    Right () -> pure preferredDir
+    Left _ -> do
+      createDirectoryIfMissing True fallbackDir
+      pure fallbackDir
+ where
+  tryEnsure = try . createDirectoryIfMissing True
+
+{- | Ensure that the album art bytes are cached.
+If not, write the album art bytes to the cache.
+-}
+ensureCachedAlbumArtBytes :: FilePath -> AlbumArtKey -> String -> ExceptT IOException IO BS.ByteString
+ensureCachedAlbumArtBytes cacheDir key uri =
+  readCachedAlbumArtBytes cacheDir key >>= \case
+    Just bytes ->
+      pure bytes
+    Nothing -> do
+      bytes <- ExceptT $ readAlbumArtBytes uri
+      writeCachedAlbumArtBytes cacheDir key bytes
+      pure bytes
+
+readCachedAlbumArtBytes :: FilePath -> AlbumArtKey -> ExceptT IOException IO (Maybe BS.ByteString)
+readCachedAlbumArtBytes cacheDir key = do
+  let path = cacheFilePath cacheDir key
+  exists <- ExceptT . try $ doesFileExist path
+  if exists
+    then Just <$> ExceptT (try $ BS.readFile path)
+    else pure Nothing
+
+writeCachedAlbumArtBytes :: FilePath -> AlbumArtKey -> BS.ByteString -> ExceptT IOException IO ()
+writeCachedAlbumArtBytes cacheDir key bytes = do
+  let path = cacheFilePath cacheDir key
+  alreadyCached <- ExceptT . try $ doesFileExist path
+  unless alreadyCached $ do
+    (tmpPath, handle) <- ExceptT . try $ openBinaryTempFile cacheDir "gaze-player-album-art"
+    liftIO $ hSetBinaryMode handle True
+    ExceptT (try $ BS.hPut handle bytes >> hClose handle) `catchE` \err -> do
+      cleanupTempImage tmpPath
+      throwE err
+    writtenMeanwhile <- ExceptT . try $ doesFileExist path
+    if writtenMeanwhile
+      then cleanupTempImage tmpPath
+      else
+        ExceptT (try $ renameFile tmpPath path) `catchE` \err -> do
+          cleanupTempImage tmpPath
+          throwE err
+
+cacheFilePath :: FilePath -> AlbumArtKey -> FilePath
+cacheFilePath cacheDir key =
+  cacheDir <> "/" <> cacheFileName key <> ".bin"
+
+cacheFileName :: AlbumArtKey -> FilePath
+cacheFileName key =
+  concatMap byteHex $
+    BS.unpack $
+      UTF8.fromString key
+ where
+  byteHex byte =
+    case showHex byte "" of
+      [single] -> ['0', single]
+      hex -> hex
 
 readAlbumArtBytes :: String -> IO (Either IOException BS.ByteString)
 readAlbumArtBytes uri = do
@@ -24,6 +109,7 @@ readAlbumArtBytes uri = do
     Right bs -> pure (Right bs)
     Left _ -> runExceptT $ runMpcBytes ["albumart", uri]
 
+-- | Render the album art bytes to a terminal image using Chafa.
 renderAlbumArt :: Term.ImageFormat -> ImageSize -> BS.ByteString -> ExceptT IOException IO RenderedImage
 renderAlbumArt format size bs = do
   rendered <- chafaOutput format size bs
@@ -35,18 +121,18 @@ renderAlbumArt format size bs = do
 runMpcBytes :: [String] -> ExceptT IOException IO BS.ByteString
 runMpcBytes args =
   readRawProcess "mpc" args handleMpcResult
-  where
-    handleMpcResult = \case
-      (ExitSuccess, out, err)
-        | looksLikeMpcStatus out ->
-            throwE $ userError $ "mpc returned status text instead of image bytes: " <> UTF8.toString err
-        | otherwise ->
-            pure out
-      (ExitFailure n, _, err) ->
-        throwE $ userError $ "mpc failed, exit " <> show n <> ": " <> UTF8.toString err
+ where
+  handleMpcResult = \case
+    (ExitSuccess, out, err)
+      | looksLikeMpcStatus out ->
+          throwE $ userError $ "mpc returned status text instead of image bytes: " <> UTF8.toString err
+      | otherwise ->
+          pure out
+    (ExitFailure n, _, err) ->
+      throwE $ userError $ "mpc failed, exit " <> show n <> ": " <> UTF8.toString err
 
-    looksLikeMpcStatus out =
-      BS.isPrefixOf (UTF8.fromString "volume:") out
+  looksLikeMpcStatus out =
+    BS.isPrefixOf (UTF8.fromString "volume:") out
 
 chafaOutput :: Term.ImageFormat -> ImageSize -> BS.ByteString -> ExceptT IOException IO BS.ByteString
 chafaOutput format (w, h) bs = do
@@ -78,31 +164,31 @@ convertToPng inputPath = do
   readRawProcess "magick" [inputPath, tmpPath] (handleMagickResult tmpPath) `catchE` \err -> do
     cleanupTempImage tmpPath
     throwE err
-  where
-    handleMagickResult tmpPath = \case
-      (ExitSuccess, _, _) ->
-        pure tmpPath
-      (_, _, err) -> do
-        cleanupTempImage tmpPath
-        throwE $ userError $ UTF8.toString err
+ where
+  handleMagickResult tmpPath = \case
+    (ExitSuccess, _, _) ->
+      pure tmpPath
+    (_, _, err) -> do
+      cleanupTempImage tmpPath
+      throwE $ userError $ UTF8.toString err
 
 runChafa :: Term.ImageFormat -> String -> FilePath -> ExceptT IOException IO BS.ByteString
 runChafa format sizeArg imagePath =
   readRawProcess "chafa" (chafaArgs format sizeArg imagePath) handleChafaResult
-  where
-    handleChafaResult = \case
-      (ExitSuccess, out, _) ->
-        pure $ sanitizeChafaOutput format out
-      (_, _, err) ->
-        throwE $ userError $ UTF8.toString err
+ where
+  handleChafaResult = \case
+    (ExitSuccess, out, _) ->
+      pure $ sanitizeChafaOutput format out
+    (_, _, err) ->
+      throwE $ userError $ UTF8.toString err
 
 chafaArgs :: Term.ImageFormat -> String -> FilePath -> [String]
 chafaArgs format sizeArg imagePath =
   commonArgs <> formatArgs format <> [imagePath]
-  where
-    commonArgs = ["-s", sizeArg]
-    formatArgs Term.Symbols = ["-f", Term.formatArg Term.Symbols]
-    formatArgs fmt = ["-f", Term.formatArg fmt]
+ where
+  commonArgs = ["-s", sizeArg]
+  formatArgs Term.Symbols = ["-f", Term.formatArg Term.Symbols]
+  formatArgs fmt = ["-f", Term.formatArg fmt]
 
 readRawProcess ::
   String ->
@@ -114,7 +200,14 @@ readRawProcess prog args handleResult =
 
 rawProcess :: String -> [String] -> ExceptT IOException IO (ExitCode, BS.ByteString, BS.ByteString)
 rawProcess prog args =
-  (ExceptT . try $ createProcess (proc prog args) {std_out = CreatePipe, std_err = CreatePipe})
+  ( ExceptT . try $
+      createProcess
+        (proc prog args)
+          { std_in = NoStream
+          , std_out = CreatePipe
+          , std_err = CreatePipe
+          }
+  )
     >>= \case
       (_, Just hout, Just herr, ph) -> do
         out <- liftIO $ BS.hGetContents hout
@@ -130,8 +223,8 @@ sanitizeChafaOutput _ = trimTrailingLineBreaks
 
 trimTrailingLineBreaks :: BS.ByteString -> BS.ByteString
 trimTrailingLineBreaks = BS.reverse . BS.dropWhile isLineBreak . BS.reverse
-  where
-    isLineBreak b = b == 10 || b == 13
+ where
+  isLineBreak b = b == 10 || b == 13
 
 pinKittyPlacement :: BS.ByteString -> BS.ByteString
 pinKittyPlacement bs =
@@ -143,41 +236,41 @@ pinKittyPlacement bs =
             <> marker
             <> cursorStatic
             <> BS.drop (BS.length marker) rest
-  where
-    marker = BS.pack [27, 95, 71, 97, 61, 84, 44]
-    cursorStatic = BS.pack [67, 61, 49, 44]
+ where
+  marker = BS.pack [27, 95, 71, 97, 61, 84, 44]
+  cursorStatic = BS.pack [67, 61, 49, 44]
 
 extractKittyGraphics :: BS.ByteString -> BS.ByteString
 extractKittyGraphics = BS.concat . go
-  where
-    start = BS.pack [27, 95, 71]
-    endST = BS.pack [27, 92]
+ where
+  start = BS.pack [27, 95, 71]
+  endST = BS.pack [27, 92]
 
-    go bs =
-      let (_, rest) = BS.breakSubstring start bs
-       in if BS.null rest
-            then []
-            else
-              let (chunk, remaining) = takeKittySequence rest
-               in chunk : go remaining
+  go bs =
+    let (_, rest) = BS.breakSubstring start bs
+     in if BS.null rest
+          then []
+          else
+            let (chunk, remaining) = takeKittySequence rest
+             in chunk : go remaining
 
-    takeKittySequence bs =
-      case kittySequenceEnd bs of
-        Nothing -> (bs, BS.empty)
-        Just end -> (BS.take end bs, BS.drop end bs)
+  takeKittySequence bs =
+    case kittySequenceEnd bs of
+      Nothing -> (bs, BS.empty)
+      Just end -> (BS.take end bs, BS.drop end bs)
 
-    kittySequenceEnd bs =
-      earliest (stEnd bs) (belEnd bs)
+  kittySequenceEnd bs =
+    earliest (stEnd bs) (belEnd bs)
 
-    stEnd bs =
-      let (before, after) = BS.breakSubstring endST bs
-       in if BS.null after then Nothing else Just (BS.length before + BS.length endST)
+  stEnd bs =
+    let (before, after) = BS.breakSubstring endST bs
+     in if BS.null after then Nothing else Just (BS.length before + BS.length endST)
 
-    belEnd bs = (+ 1) <$> BS.elemIndex 7 bs
+  belEnd bs = (+ 1) <$> BS.elemIndex 7 bs
 
-    earliest Nothing y = y
-    earliest x Nothing = x
-    earliest (Just x) (Just y) = Just (min x y)
+  earliest Nothing y = y
+  earliest x Nothing = x
+  earliest (Just x) (Just y) = Just (min x y)
 
 cleanupTempImage :: FilePath -> ExceptT IOException IO ()
 cleanupTempImage path =

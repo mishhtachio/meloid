@@ -1,0 +1,86 @@
+cabal-version:      3.0
+
+name:               meloid
+
+-- PVP summary:     +-+------- breaking API changes
+--                  | | +----- non-breaking API additions
+--                  | | | +--- code changes with no API change
+version:            0.1.0.0
+
+synopsis:           A beautiful TUI music player
+-- description:
+license:            MIT
+license-file:       LICENSE
+author:             Dexer Matters
+maintainer:         dexermatters@gmail.com
+category:           Sound
+build-type:         Simple
+extra-doc-files:    
+    CHANGELOG.md
+    README.md
+
+common warnings
+    ghc-options: -Wall
+
+executable meloid
+    import:           warnings
+    ghc-options:      -threaded
+    main-is:          Main.hs
+    other-modules:
+        Attrs
+        Sys
+        Image
+        Cmd
+        Types
+        Types.Identity
+        Types.Core
+        Types.Model
+        Types.Helpers
+        Types.Actions
+        Types.Logging
+        Handle
+        Widgets
+        Widgets.Common
+        Widgets.Images
+        Widgets.Lists
+        Widgets.Controls
+        Widgets.Views
+        Widgets.Edits
+        Compat.Image
+        Compat.Term
+        Compat.Ansi
+
+    -- other-extensions:
+    build-depends:    
+        base ^>=4.20.2.0, 
+        mtl,
+        containers,
+        directory,
+        process,
+        transformers,
+
+        -- Terminal UI packages
+        brick,
+        vty,
+        text-zipper,
+
+        -- Lens packages
+        microlens-th,
+        microlens-mtl,
+        microlens,
+
+        -- Media packages
+        libmpd,
+
+        -- Misc
+        raw-strings-qq,
+        time,
+        stm,
+        utf8-string,
+        bytestring,
+        vector,
+        vector-algorithms,
+        vty-crossplatform
+
+    hs-source-dirs:   app
+    default-language: GHC2024

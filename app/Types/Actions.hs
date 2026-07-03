@@ -1,0 +1,69 @@
+{-# LANGUAGE LambdaCase #-}
+
+{- | State-changing actions that are shared across
+the application.
+These helpers keep mutation in one place instead of spreading
+it through the view and widget code.
+-}
+module Types.Actions (
+  panic,
+  closeDialog,
+  openSimpleDialog,
+  switchView,
+  switchMode,
+  returnToLastView,
+  sendRequest,
+) where
+
+import Brick.BChan (writeBChan)
+import Brick.Types (EventM)
+import Control.Monad (unless)
+import Control.Monad.IO.Class (liftIO)
+import Lens.Micro.Mtl
+import Types.Core
+import Types.Identity (MName, ViewName)
+import Types.Model
+
+-- | Mark the application as panicked so the outer loop can stop.
+panic :: EventM (MName St) St ()
+panic = stPanic .= True
+
+-- | Close the active dialog and clear its view marker.
+closeDialog :: EventM (MName St) St ()
+closeDialog = do
+  stDialog .= Nothing
+  stDialogView .= Nothing
+
+-- | Open a simple text dialog.
+openSimpleDialog :: ViewName -> String -> EventM (MName St) St ()
+openSimpleDialog dialogName text = do
+  stDialog .= Just (DialogSt 0 text)
+  stDialogView .= Just dialogName
+
+-- | Switch to a different top-level view.
+switchView :: ViewName -> EventM (MName St) St ()
+switchView v = do
+  current <- use stCurrentView
+  unless (current == Just v) $ do
+    stLastView .= current
+    stCurrentView .= Just v
+
+-- | Cycle through the application modes.
+switchMode :: EventM (MName St) St ()
+switchMode =
+  stMode %= \case
+    NormalMode -> CommandMode
+    CommandMode -> EditMode
+    EditMode -> NormalMode
+
+-- | Return to the previous view, if one exists.
+returnToLastView :: EventM (MName St) St ()
+returnToLastView = use stLastView >>= mapM_ switchView
+
+-- | Send a request to the background worker if the channel exists.
+sendRequest :: Request -> EventM (MName St) St ()
+sendRequest r = do
+  chan <- use stChannel
+  case chan of
+    Nothing -> pure ()
+    Just c -> liftIO $ writeBChan c r
