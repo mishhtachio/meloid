@@ -28,7 +28,6 @@ module Types.Model (
   stMenu,
   stMode,
   stDialogView,
-  stSelectedEQ,
   stSelectedAlbum,
   stSelectedPlaylist,
   stConfig,
@@ -46,7 +45,6 @@ module Types.Model (
   csAllAlbums,
   csConfigs,
   csEQConfigs,
-  csCurrentEQ,
   -- PlayingSt lenses
   psCurrentSong,
   psCurrentTime,
@@ -108,7 +106,6 @@ data ConfigSt = ConfigSt
     _csConfigs :: ConfigValue
   , -- Eq config loaded from /eq/*
     _csEQConfigs :: Map.Map String EQConfigValue
-  , _csCurrentEQ :: String
   }
 
 makeLenses ''ConfigSt
@@ -146,7 +143,6 @@ data St
   , _stSongProgressPreview :: Maybe (Double, Double)
   , _stLastRightPressed :: Maybe (MName St)
   , _stCurrentView :: Maybe ViewName
-  , _stSelectedEQ :: String
   , _stLastView :: Maybe ViewName
   , _stDialog :: Maybe DialogSt
   , _stMenu :: Maybe [(String, EventM (MName St) St ())]

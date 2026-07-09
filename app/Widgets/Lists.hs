@@ -8,20 +8,23 @@ module Widgets.Lists (
   AlbumSongEntry (..),
   AlbumArtThumb (..),
   QueueSongList (..),
-  QueueSongListEntry (..),
-  MenuListEntry (..),
+  QueueSongEntry (..),
+  EQConfigList (..),
+  EQConfigEntry (..),
+  MenuEntry (..),
   drawMenuLayer,
 ) where
 
 import Brick
 import Brick.Widgets.Core qualified as W
+import Data.Map qualified as Map
 import Data.Vector qualified as Vec
 import Lens.Micro
 import Lens.Micro.Mtl
 import Network.MPD qualified as MPD
 import Types
 import Widgets.Common
-import Widgets.Images (lookupAlbumThumbRenderedImage, renderImage)
+import Widgets.Visual.Art (lookupAlbumThumbRenderedImage, renderImage)
 
 data AllAlbumList = AllAlbumList
 
@@ -35,9 +38,13 @@ data AlbumArtThumb = AlbumArtThumb Int
 
 data QueueSongList = QueueSongList
 
-data QueueSongListEntry = QueueSongEntry Int
+data QueueSongEntry = QueueSongEntry Int
 
-data MenuListEntry = MenuListEntry Int
+data EQConfigList = EQConfigList
+
+data EQConfigEntry = EQConfigEntry Int
+
+data MenuEntry = MenuEntry Int
 
 selectedAlbumSongs :: St -> Vec.Vector MPD.Song
 selectedAlbumSongs st =
@@ -116,8 +123,7 @@ instance Drawable St QueueSongList where
   onMouseScrollDown _ = scrollViewportBy (mName QueueSongList) 1
   parent _ = Just (ParentView MainView)
 
-instance Drawable St QueueSongListEntry where
-  draw :: QueueSongListEntry -> St -> Widget (MName St)
+instance Drawable St QueueSongEntry where
   draw (QueueSongEntry i) st =
     currentPlaying $
       drawSongRow st QueueSongEntry i (st ^. stPlaying . psCurrentQueue) (const (show (i + 1)))
@@ -134,6 +140,41 @@ instance Drawable St QueueSongListEntry where
     stPlaying . psPaused .= False
     sendRequest . MPDOperation . pure $ MPD.play (Just i)
 
+instance Drawable St EQConfigList where
+  draw n st =
+    viewportWithBar st (mName n) $
+      W.vBox $
+        map
+          (drawNamed st . EQConfigEntry)
+          [0 .. Map.size (st ^. stConfig . csEQConfigs) - 1]
+  handlesMouseScrollUp _ = True
+  handlesMouseScrollDown _ = True
+  onMouseScrollUp _ = scrollViewportBy (mName EQConfigList) (-1)
+  onMouseScrollDown _ = scrollViewportBy (mName EQConfigList) 1
+  parent _ = Just (ParentView MainView)
+
+instance Drawable St EQConfigEntry where
+  draw (EQConfigEntry i) st =
+    drawGeneralButton st (mName $ EQConfigEntry i) $
+      strClippedWithEllipsis (tip <> text)
+   where
+    tip
+      | st ^. stCurrentEQIndex == Just i = "> "
+      | otherwise = ""
+    -- SAFETY: EQConfigEntry is indexed within the length of EQConfigs
+    text = st ^. stConfig . csEQConfigs . to (fst . (Map.elemAt i))
+  variant (EQConfigEntry i) = i
+  parent _ = Just (ParentName (mName EQConfigList))
+  isClickable _ = True
+  handlesMouseLeftUp _ = True
+  onMouseLeftUp (EQConfigEntry i) _ = do
+    eqs <- use $ stConfig . csEQConfigs
+    let newId = fst $ Map.elemAt i eqs
+    stConfig . csConfigs . cvEq .= newId
+    paused <- use $ stPlaying . psPaused
+    sendRequest (UpdateEQId newId)
+    sendRequest $ MPDOperation [MPD.pause paused]
+
 drawMenuLayer :: St -> Widget (MName St)
 drawMenuLayer st = case st ^. stMenu of
   Just _ -> loc menu
@@ -146,24 +187,24 @@ drawMenuLayer st = case st ^. stMenu of
     (fmap length -> Just len) ->
       W.withDefAttr (attrName "secondary") $
         W.vBox $
-          map (drawNamed st . MenuListEntry) [0 .. len - 1]
+          map (drawNamed st . MenuEntry) [0 .. len - 1]
     _ -> W.emptyWidget
 
-instance Drawable St MenuListEntry where
-  draw (MenuListEntry i) st = case st ^. stMenu of
-    -- SAFETY: MenuListEntry is indexed within the length of the menu
+instance Drawable St MenuEntry where
+  draw (MenuEntry i) st = case st ^. stMenu of
+    -- SAFETY: MenuEntry is indexed within the length of the menu
     -- So the menu must exist
     (fmap (!! i) -> Just (name, _)) ->
       drawButton
         st
-        (mName $ MenuListEntry i)
+        (mName $ MenuEntry i)
         (name <> "          ")
     _ -> W.emptyWidget
   parent _ = Just (ParentView MainView)
-  variant (MenuListEntry i) = i
+  variant (MenuEntry i) = i
   isClickable _ = True
   handlesMouseLeftUp _ = True
-  onMouseLeftUp (MenuListEntry i) _ =
+  onMouseLeftUp (MenuEntry i) _ =
     use stMenu >>= \case
       (fmap (!! i) -> Just (_, action)) ->
         action

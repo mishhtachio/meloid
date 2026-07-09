@@ -6,6 +6,7 @@ compatibility with different software such like PulseAudio.
 module Compat.Software (
   AudioServer (..),
   updateModuleEQId,
+  restartMPDServer,
   restartAudioServer,
 ) where
 
@@ -53,6 +54,14 @@ restartAudioServer :: AudioServer -> ExceptT String IO ()
 restartAudioServer PipeWire =
   -- run `systemctl --user restart pipewire pipewire-pulse wireplumber`
   ExceptT $
-    tryJust @IOError (\err -> Just $ "Failed to restart audio server: \n" <> show err) $
+    tryJust @SomeException (\err -> Just $ "Failed to restart audio server: \n" <> show err) $
       void $
         readProcess "systemctl" ["--user", "restart", "pipewire", "pipewire-pulse", "wireplumber"] ""
+
+restartMPDServer :: ExceptT String IO ()
+restartMPDServer =
+  -- run `systemctl --user restart mpd`
+  ExceptT $
+    tryJust @SomeException (\err -> Just $ "Failed to restart MPD server: \n" <> show err) $
+      void $
+        readProcess "systemctl" ["--user", "restart", "mpd"] ""

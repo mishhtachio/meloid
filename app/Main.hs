@@ -94,7 +94,6 @@ defaultSt =
     , _stMode = NormalMode
     , _stSelectedAlbum = Nothing
     , _stSelectedPlaylist = 0
-    , _stSelectedEQ = "default"
     , _stConfig =
         ConfigSt
           { _csVolume = 0
@@ -109,7 +108,6 @@ defaultSt =
                 , _cvEq = "default"
                 }
           , _csEQConfigs = Map.empty
-          , _csCurrentEQ = "default"
           }
     , _stPlaying =
         PlayingSt

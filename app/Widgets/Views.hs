@@ -31,13 +31,9 @@ import Types
 import Widgets.Common
 import Widgets.Controls
 import Widgets.Edits (CommandEditor (CommandEditor))
-import Widgets.Images (AlbumArtPlaying (..), lookupAlbumThumbRenderedImage)
-import Widgets.Lists (
-  AlbumArtThumb (..),
-  AlbumSongList (..),
-  AllAlbumList (..),
-  QueueSongList (..),
- )
+import Widgets.Lists
+import Widgets.Visual.Art
+import Widgets.Visual.EQ
 
 data DebugViewport = DebugViewport
 
@@ -69,6 +65,7 @@ drawView MainView st =
               , drawCurrentQueueList st
               ]
         ]
+    , W.vLimitPercent 20 $ drawEqualizerPanel st
     , drawBottomBar st
     ]
 drawView DebugView st = drawNamed st DebugViewport
@@ -220,6 +217,20 @@ drawCurrentQueueList st =
         , W.padLeft (W.Pad 1) . W.padRight (W.Pad 1) $ drawNamed st ClearButton
         ]
     , drawNamed st QueueSongList
+    ]
+
+drawEqualizerPanel :: St -> Widget (MName St)
+drawEqualizerPanel st
+  | Map.null (st ^. stConfig . csEQConfigs) = W.emptyWidget
+drawEqualizerPanel st =
+  W.vBox
+    [ withAttr
+        (attrName "label")
+        (W.str " EQUALIZER ")
+    , W.hBox
+        [ W.hLimit 11 $ drawNamed st EQConfigList
+        , drawNamed st EQCurveVisualizer
+        ]
     ]
 
 drawBottomBar :: St -> Widget (MName St)
