@@ -8,6 +8,8 @@ yet under development.
 Prerequisite
 
 Make sure you have Magick and Chafa installed on your computer 
+To persist edits back into `config.yaml` while preserving comments and formatting,
+install `python3` and `ruamel.yaml` (`python3 -m pip install 'ruamel.yaml>=0.19,<0.20'`).
 
 
 Roadmap
