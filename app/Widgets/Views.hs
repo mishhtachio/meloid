@@ -41,6 +41,72 @@ import Widgets.Lists (
 
 data DebugViewport = DebugViewport
 
+instance Drawable St LayoutElement where
+  draw element st = go element
+   where
+    go = \case
+      EHBox weights children ->
+        W.hBox $
+          applyElementSpacing (W.padLeft (W.Pad 1)) children $
+            zipWith W.hLimitPercent (layoutPercents weights children) $
+              fmap go children
+      EVBox weights children ->
+        W.vBox $
+          applyElementSpacing (W.padTop (W.Pad 1)) children $
+            zipWith W.vLimitPercent (layoutPercents weights children) $
+              fmap go children
+      EAlbumList ->
+        drawAllAlbumList st
+      EAlbumSongList ->
+        drawAlbumSongList st
+      EPlayingQueue ->
+        drawCurrentQueueList st
+
+    -- Calculate the percentage widths of each child element.
+    -- It is always the last child that takes up the remaining space.
+    layoutPercents weights children =
+      remainingPercents effectiveWeights
+     where
+      effectiveWeights =
+        case weights of
+          Just values
+            | length values == length children
+            , all (> 0) values ->
+                values
+          _ ->
+            replicate (length children) 1
+
+    remainingPercents = \case
+      [] -> []
+      [_] -> [100]
+      value : rest ->
+        let remaining = value + sum rest
+            current = max 1 . floor $ (value / remaining) * 100
+         in current : remainingPercents rest
+
+    -- Scrollbar is considered as a one-size divider.
+    -- So we don't need padding when the element has a scrollbar.
+    hasScrollBar = \case
+      EAlbumList -> True
+      EAlbumSongList -> True
+      EPlayingQueue -> True
+      EHBox _ children -> any hasScrollBar children
+      EVBox _ children -> any hasScrollBar children
+
+    applyElementSpacing pad elements widgets =
+      case zip elements widgets of
+        [] -> []
+        (firstElement, firstWidget) : rest ->
+          firstWidget
+            : [ applyPadding left right widget
+              | ((left, _), (right, widget)) <- zip ((firstElement, firstWidget) : rest) rest
+              ]
+     where
+      applyPadding left right
+        | hasScrollBar left || hasScrollBar right = id
+        | otherwise = pad
+  parent _ = Just (ParentView MainView)
+
 {- | This function combines the lookup of the playing
 album image and ones in the album list to search for
 an arbitrary rendered image
@@ -61,14 +127,8 @@ drawView MainView st =
         , W.padLeft (W.Pad 2) . W.padRight (W.Pad 1) $ drawSongPanel st
         , drawNamed st AlbumArtPlaying
         ]
-    , W.padTop (W.Pad 1) . W.hBox $
-        [ W.hLimitPercent 40 $ drawNamed st AllAlbumList
-        , W.padLeft (W.Pad 1) $
-            W.vBox
-              [ drawAlbumSongList st
-              , drawCurrentQueueList st
-              ]
-        ]
+    , W.padTop (W.Pad 1) $
+        drawNamed st (st ^. stConfig . csConfigs . cvLayout)
     , drawBottomBar st
     ]
 drawView DebugView st = drawNamed st DebugViewport
@@ -154,6 +214,13 @@ instance Drawable St DebugViewport where
   handlesMouseScrollDown _ = True
   onMouseScrollUp _ = scrollViewportBy (mName DebugViewport) (-1)
   onMouseScrollDown _ = scrollViewportBy (mName DebugViewport) 1
+
+
+drawAllAlbumList :: St -> Widget (MName St)
+drawAllAlbumList st = W.vBox [
+  W.withAttr (attrName "label") $ W.str " ALBUMS ",
+  drawNamed st AllAlbumList
+  ]
 
 drawAlbumSongList :: St -> Widget (MName St)
 drawAlbumSongList st =

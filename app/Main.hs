@@ -107,6 +107,7 @@ defaultSt =
                 { _cvColorMode = "auto"
                 , _cvShowWelcome = True
                 , _cvEq = "default"
+                , _cvLayout = defaultLayout
                 }
           , _csEQConfigs = Map.empty
           , _csCurrentEQ = "default"

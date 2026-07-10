@@ -82,6 +82,7 @@ executable meloid
     brick,
     vty,
     text-zipper,
+    text,
 
     -- Lens packages
     microlens-th,

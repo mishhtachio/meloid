@@ -30,3 +30,24 @@ colorMode: auto
 # You can check all the available profiles at ./eq/*.txt or on the equalizer
 # panel in the application
 eq: default
+
+# Layout
+#
+# Available layout elements:
+# - albumList
+# - albumSongList
+# - playingQueue
+#
+# Optional weights can be specified as the first item of an hBox/vBox:
+# hBox:
+#   - weights: [2, 3]
+#   - albumList
+#   - playingQueue
+layout:
+  hBox:
+    - weights: [2, 3]
+    - albumList
+    - vBox:
+        - weights: [1, 1]
+        - albumSongList
+        - playingQueue
