@@ -4,7 +4,7 @@
 module Widgets.Lists (
   AllAlbumList (..),
   AllAlbumEntry (..),
-  AlbumSongList (..),
+  TrackList (..),
   AlbumSongEntry (..),
   AlbumArtThumb (..),
   QueueSongList (..),
@@ -30,7 +30,7 @@ data AllAlbumList = AllAlbumList
 
 data AllAlbumEntry = AllAlbumEntry Int
 
-data AlbumSongList = AlbumSongList
+data TrackList = TrackList
 
 data AlbumSongEntry = AlbumSongEntry Int
 
@@ -75,15 +75,15 @@ instance Drawable St AllAlbumEntry where
   parent (AllAlbumEntry _) = Just (ParentName (mName AllAlbumList))
   variant (AllAlbumEntry i) = i
 
-instance Drawable St AlbumSongList where
+instance Drawable St TrackList where
   draw _ st =
     drawSongList
       st
-      (mName AlbumSongList)
+      (mName TrackList)
       AlbumSongEntry
       (selectedAlbumSongs st)
-  onMouseScrollUp _ = Just $ scrollViewportBy (mName AlbumSongList) (-1)
-  onMouseScrollDown _ = Just $ scrollViewportBy (mName AlbumSongList) 1
+  onMouseScrollUp _ = Just $ scrollViewportBy (mName TrackList) (-1)
+  onMouseScrollDown _ = Just $ scrollViewportBy (mName TrackList) 1
   parent _ = Just (ParentView MainView)
 
 instance Drawable St AlbumSongEntry where
@@ -95,7 +95,7 @@ instance Drawable St AlbumSongEntry where
       let song = selectedAlbumSongs st Vec.! i
       MPD.add (MPD.sgFilePath song)
     sendRequest SignalCurrentQueue
-  parent (AlbumSongEntry _) = Just (ParentName (mName AlbumSongList))
+  parent (AlbumSongEntry _) = Just (ParentName (mName TrackList))
   variant (AlbumSongEntry i) = i
 
 instance Drawable St AlbumArtThumb where

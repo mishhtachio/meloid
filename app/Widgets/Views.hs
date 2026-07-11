@@ -1,6 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
 
 {- | This module provides views for the application.
 Views are the top-level widgets of the application which
@@ -19,142 +18,22 @@ module Widgets.Views (
 ) where
 
 import Brick
-import Brick.Widgets.Border qualified as Bd
 import Brick.Widgets.Center qualified as C
 import Brick.Widgets.Core qualified as W
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map qualified as Map
 import Data.Maybe (fromMaybe)
-import Data.Vector qualified as Vec
-import Lens.Micro ((^.), (^?))
+import Lens.Micro
 import Network.MPD qualified as MPD
 import Types
 import Widgets.Common
 import Widgets.Controls
 import Widgets.Edits (CommandEditor (CommandEditor))
+import Widgets.Elements
 import Widgets.Lists
 import Widgets.Visual.Art
-import Widgets.Visual.EQ
 
 data DebugViewport = DebugViewport
-
-instance Drawable St LayoutElement where
-  draw element st
-    | st ^. stMode == EditMode = drawNamed st (ElementScaffoldName element)
-    | otherwise = go element
-   where
-    go = \case
-      EHBox weights children ->
-        W.hBox $
-          applyElementSpacing (W.padLeft (W.Pad 1)) children $
-            zipWith W.hLimitPercent (layoutPercents weights children) $
-              fmap go children
-      EVBox weights children ->
-        W.vBox $
-          applyElementSpacing (W.padTop (W.Pad 1)) children $
-            zipWith W.vLimitPercent (layoutPercents weights children) $
-              fmap go children
-      EAlbumList ->
-        drawAllAlbumList st
-      EAlbumSongList ->
-        drawAlbumSongList st
-      EPlayingQueue ->
-        drawCurrentQueueList st
-
-    -- Calculate the percentage widths of each child element.
-    -- It is always the last child that takes up the remaining space.
-    layoutPercents weights children =
-      remainingPercents effectiveWeights
-     where
-      effectiveWeights =
-        case weights of
-          Just values
-            | length values == length children
-            , all (> 0) values ->
-                values
-          _ ->
-            replicate (length children) 1
-
-    remainingPercents = \case
-      [] -> []
-      [_] -> [100]
-      value : rest ->
-        let remaining = value + sum rest
-            current = max 1 . floor $ (value / remaining) * 100
-         in current : remainingPercents rest
-
-    -- Scrollbar is considered as a one-size divider.
-    -- So we don't need padding when the element has a scrollbar.
-    hasScrollBar = \case
-      EAlbumList -> True
-      EAlbumSongList -> True
-      EPlayingQueue -> True
-      EHBox _ children -> any hasScrollBar children
-      EVBox _ children -> any hasScrollBar children
-
-    applyElementSpacing pad elements widgets =
-      case zip elements widgets of
-        [] -> []
-        (firstElement, firstWidget) : rest ->
-          firstWidget
-            : [ applyPadding left right widget
-              | ((left, _), (right, widget)) <- zip ((firstElement, firstWidget) : rest) rest
-              ]
-     where
-      applyPadding left right
-        | hasScrollBar left || hasScrollBar right = id
-        | otherwise = pad
-  parent _ = Just (ParentView MainView)
-
-instance Drawable St ElementScaffoldName where
-  draw (ElementScaffoldName element) st =
-    case element of
-      EHBox weights children ->
-        drawElementContainer (formatElementName element) $
-          W.hBox $
-            applyPlaceholderSpacing (W.padLeft (W.Pad 1)) $
-              zipWith W.hLimitPercent (layoutPercents weights children) $
-                fmap (drawNamed st . ElementScaffoldName) children
-      EVBox weights children ->
-        drawElementContainer (formatElementName element) $
-          W.vBox $
-            applyPlaceholderSpacing (W.padTop (W.Pad 1)) $
-              zipWith W.vLimitPercent (layoutPercents weights children) $
-                fmap (drawNamed st . ElementScaffoldName) children
-      leaf ->
-        drawElementPlaceholder (formatElementName leaf)
-   where
-    layoutPercents weights children =
-      remainingPercents effectiveWeights
-     where
-      effectiveWeights =
-        case weights of
-          Just values
-            | length values == length children
-            , all (> 0) values ->
-                values
-          _ ->
-            replicate (length children) 1
-
-    drawElementPlaceholder label =
-      Bd.border $ C.center $ W.str label
-
-    drawElementContainer label =
-      Bd.borderWithLabel (W.str (" " <> label <> " "))
-
-    remainingPercents = \case
-      [] -> []
-      [_] -> [100]
-      value : rest ->
-        let remaining = value + sum rest
-            current = max 1 . floor $ (value / remaining) * 100
-         in current : remainingPercents rest
-
-    applyPlaceholderSpacing _ [] = []
-    applyPlaceholderSpacing pad (widget : widgets) =
-      widget : fmap pad widgets
-  parent _ = Just (ParentView MainView)
-  onMouseLeftUp n _ = logReqDebug "onMouseLeftUp" (show n)
 
 {- | This function combines the lookup of the playing
 album image and ones in the album list to search for
@@ -176,8 +55,8 @@ drawView MainView st =
         , W.padLeft (W.Pad 2) . W.padRight (W.Pad 1) $ drawSongPanel st
         , drawNamed st AlbumArtPlaying
         ]
-    , W.padTop (W.Pad 1) $
-        drawNamed st (st ^. stConfig . csConfigs . cvLayout)
+    , W.padTop (W.Pad 1) . W.padBottom W.Max $
+        drawNamed st (ElementName [])
     , drawBottomBar st
     ]
 drawView DebugView st = drawNamed st DebugViewport
@@ -262,29 +141,6 @@ instance Drawable St DebugViewport where
   onMouseScrollUp _ = Just $ scrollViewportBy (mName DebugViewport) (-1)
   onMouseScrollDown _ = Just $ scrollViewportBy (mName DebugViewport) 1
 
-drawAllAlbumList :: St -> Widget (MName St)
-drawAllAlbumList st =
-  W.vBox
-    [ W.withAttr (attrName "label") $ W.str " ALBUMS "
-    , drawNamed st AllAlbumList
-    ]
-
-drawAlbumSongList :: St -> Widget (MName St)
-drawAlbumSongList st =
-  case selected of
-    Nothing -> W.emptyWidget
-    Just _ ->
-      W.vBox
-        [ W.hBox
-            [ withAttr (attrName "label") (W.str " TRACKS ")
-            , W.padLeft W.Max $ withAttr (attrName "meta") $ W.str $ album
-            ]
-        , drawNamed st AlbumSongList
-        ]
- where
-  selected = (st ^. stSelectedAlbum) >>= ((st ^. stConfig . csAllAlbums) Vec.!?)
-  album = maybe "" albumName selected
-
 drawSongPanel :: St -> Widget (MName St)
 drawSongPanel st =
   W.vBox
@@ -317,37 +173,6 @@ drawControlPanel st =
       ]
  where
   (elapsed, total) = fromMaybe (0, 0) $ st ^. stShownCurrentTime
-
-drawCurrentQueueList :: St -> Widget (MName St)
-drawCurrentQueueList st =
-  W.vBox
-    [ W.hBox
-        [ withAttr (attrName "label") $ W.str " CURRENT QUEUE "
-        , W.padLeft W.Max $ drawNamed st ShuffleButton
-        , W.padLeft (W.Pad 1) $ drawNamed st ReverseOrderButton
-        , W.padLeft (W.Pad 1) . W.padRight (W.Pad 1) $ drawNamed st ClearButton
-        ]
-    , drawNamed st QueueSongList
-    ]
-
-drawEqualizerPanel :: St -> Widget (MName St)
-drawEqualizerPanel st
-  | Map.null (st ^. stConfig . csEQConfigs) = W.emptyWidget
-drawEqualizerPanel st =
-  W.vBox
-    [ W.hBox
-        [ withAttr
-            (attrName "label")
-            (W.str " EQUALIZER ")
-        , W.padLeft W.Max $ drawNamed st EQSwitch
-        ]
-    , W.hBox
-        [ W.hLimit 11 $ drawNamed st EQConfigList
-        , case st ^. stIsTriggered (mName EQSwitch) of
-            False -> drawNamed st EQCurveVisualizer
-            True -> W.padLeft (W.Pad 1) $ drawNamed st EQGainBarsViewport
-        ]
-    ]
 
 drawBottomBar :: St -> Widget (MName St)
 drawBottomBar st =

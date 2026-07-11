@@ -54,6 +54,7 @@ executable meloid
     Handle
     Widgets
     Widgets.Common
+    Widgets.Elements
     Widgets.Layer
     Widgets.Lists
     Widgets.Controls

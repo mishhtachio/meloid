@@ -16,7 +16,6 @@ where
 
 import Brick
 import Brick.BChan (BChan, writeBChan, writeBChanNonBlocking)
-import Types.Configs
 import Compat.Term
 import Compat.Term qualified as Term
 import Control.Concurrent (forkIO)
@@ -40,6 +39,7 @@ import Lens.Micro ((^.))
 import Lens.Micro.Mtl
 import Network.MPD qualified as MPD
 import Types
+import Types.Configs
 import Widgets qualified as Names
 
 data ImageRenderQueue = ImageRenderQueue

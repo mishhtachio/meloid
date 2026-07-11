@@ -86,6 +86,7 @@ defaultSt =
           }
     , _stPressed = Nothing
     , _stTriggeredNames = Set.empty
+    , _stTabStates = Map.empty
     , _stSongProgressPreview = Nothing
     , _stLastRightPressed = Nothing
     , _stCurrentView = Nothing
@@ -108,7 +109,7 @@ defaultSt =
                 { _cvColorMode = "auto"
                 , _cvShowWelcome = True
                 , _cvEq = "default"
-                , _cvLayout = defaultLayout
+                , _cvLayout = placeholderLayout
                 }
           , _csEQConfigs = Map.empty
           }

@@ -90,7 +90,7 @@ musicPlayerThread reqChan evChan = do
   -- Initialize stored configs
   configs <- runExceptT (Stored.read Stored.Configs) >>= either panic pure
   eqConfigs <- runExceptT loadEQConfigs >>= either panic pure
-  log $ "Config is loaded successfully: " <> show configs
+  log $ "Config is loaded successfully: " <> toString configs
   log $ "EQ configs are loaded successfully: " <> show eqConfigs
 
   -- Update modules

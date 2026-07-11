@@ -23,6 +23,7 @@ module Types.Model (
   stSongProgressPreview,
   stLastRightPressed,
   stTriggeredNames,
+  stTabStates,
   stCurrentView,
   stLastView,
   stDialog,
@@ -144,6 +145,7 @@ data St
   , _stPressed :: Maybe (MName St)
   , _stSongProgressPreview :: Maybe (Double, Double)
   , _stTriggeredNames :: Set.Set (MName St)
+  , _stTabStates :: Map.Map [Int] Int
   , _stLastRightPressed :: Maybe (MName St)
   , _stCurrentView :: Maybe ViewName
   , _stLastView :: Maybe ViewName

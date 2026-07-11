@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveLift #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
 {- | This model provides serializable structures for
 configuring the application. It also provides parsing and
@@ -12,11 +12,11 @@ module Types.Schemas (
   FromString (..),
   ConfigValue (..),
   LayoutElement (..),
-  defaultLayout,
-  formatElementName,
   EQConfigValue (..),
   EQBand (..),
   EQFilterType (..),
+  placeholderLayout,
+  formatElementName,
   cvShowWelcome,
   cvColorMode,
   cvEq,
@@ -33,15 +33,14 @@ import Control.Monad (when)
 import Data.Aeson qualified as JSON
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Aeson.Types (Parser)
 import Data.ByteString.UTF8 qualified as UTF8
 import Data.Char (toLower)
 import Data.List (dropWhileEnd, stripPrefix)
 import Data.Text qualified as Text
 import Data.Void (Void)
 import Data.Yaml qualified as YAML
-import Data.Aeson.Types (Parser)
 import GHC.Generics (Generic)
-import Language.Haskell.TH.Syntax (Lift)
 import Lens.Micro ((^.))
 import Lens.Micro.TH (makeLenses)
 import Numeric (showFFloat)
@@ -64,57 +63,39 @@ class ToString a where
 class FromString a where
   fromString :: String -> Either String a
 
-
--- | Layout elements used by the configurable main view layout.
 data LayoutElement
   = EHBox (Maybe [Double]) [LayoutElement]
   | EVBox (Maybe [Double]) [LayoutElement]
+  | ETabs [LayoutElement]
   | EAlbumList
-  | EAlbumSongList
-  | EPlayingQueue
-  deriving (Eq, Show, Lift)
+  | ETrackList
+  | ECurrentQueue
+  | EEqualizer
+  | EPlaceholder
+  deriving (Eq, Show, Generic)
 
+-- | Format a layout element as a string.
 formatElementName :: LayoutElement -> String
-formatElementName EHBox{} = "hBox"
-formatElementName EVBox{} = "vBox"
+formatElementName (EHBox _ _) = "hBox"
+formatElementName (EVBox _ _) = "vBox"
 formatElementName EAlbumList = "albumList"
-formatElementName EAlbumSongList = "albumSongList"
-formatElementName EPlayingQueue = "playingQueue"
+formatElementName ETrackList = "trackList"
+formatElementName ECurrentQueue = "currentQueue"
+formatElementName EEqualizer = "equalizer"
+formatElementName (ETabs _) = "tabs"
+formatElementName EPlaceholder = "placeholder"
 
+-- | Parse a layout element from a string.
 parseElementName :: String -> Maybe LayoutElement
 parseElementName "albumList" = Just EAlbumList
-parseElementName "albumSongList" = Just EAlbumSongList
-parseElementName "playingQueue" = Just EPlayingQueue
+parseElementName "trackList" = Just ETrackList
+parseElementName "currentQueue" = Just ECurrentQueue
+parseElementName "equalizer" = Just EEqualizer
+parseElementName "placeholder" = Just EPlaceholder
 parseElementName _ = Nothing
 
-defaultLayout :: LayoutElement
-defaultLayout =
-  EHBox (Just [2, 3])
-    [ EAlbumList
-    , EVBox (Just [1, 1])
-        [ EAlbumSongList
-        , EPlayingQueue
-        ]
-    ]
-
-normalizeElement :: LayoutElement -> LayoutElement
-normalizeElement (EHBox weights elements) =
-  EHBox weights $
-    concatMap (flattenHBoxElement weights) $
-      fmap normalizeElement elements
-normalizeElement (EVBox weights elements) =
-  EVBox weights $
-    concatMap (flattenVBoxElement weights) $
-      fmap normalizeElement elements
-normalizeElement element = element
-
-flattenHBoxElement :: Maybe [Double] -> LayoutElement -> [LayoutElement]
-flattenHBoxElement Nothing (EHBox Nothing elements) = elements
-flattenHBoxElement _ element = [element]
-
-flattenVBoxElement :: Maybe [Double] -> LayoutElement -> [LayoutElement]
-flattenVBoxElement Nothing (EVBox Nothing elements) = elements
-flattenVBoxElement _ element = [element]
+placeholderLayout :: LayoutElement
+placeholderLayout = EPlaceholder
 
 instance JSON.FromJSON LayoutElement where
   parseJSON value =
@@ -123,19 +104,21 @@ instance JSON.FromJSON LayoutElement where
 
 instance JSON.ToJSON LayoutElement where
   toJSON element =
-    case normalizeElement element of
+    case element of
       EHBox weights elements -> JSON.object ["hBox" JSON..= encodeBoxItems weights elements]
       EVBox weights elements -> JSON.object ["vBox" JSON..= encodeBoxItems weights elements]
+      ETabs elements -> JSON.object ["tabs" JSON..= fmap JSON.toJSON elements]
       leaf -> JSON.String (Text.pack (formatElementName leaf))
 
   toEncoding element =
-    case normalizeElement element of
+    case element of
       EHBox weights elements -> JSON.pairs ("hBox" JSON..= encodeBoxItems weights elements)
       EVBox weights elements -> JSON.pairs ("vBox" JSON..= encodeBoxItems weights elements)
+      ETabs elements -> JSON.pairs ("tabs" JSON..= fmap JSON.toJSON elements)
       leaf -> JSON.toEncoding (formatElementName leaf)
 
 instance ToString LayoutElement where
-  toString = UTF8.toString . YAML.encode . normalizeElement
+  toString = UTF8.toString . YAML.encode
 
 instance FromString LayoutElement where
   fromString input =
@@ -152,7 +135,7 @@ encodeBoxItems weights elements =
 parseElementText :: Text.Text -> Parser LayoutElement
 parseElementText text =
   case parseElementName (Text.unpack text) of
-    Just element -> pure (normalizeElement element)
+    Just element -> pure element
     Nothing -> fail $ "Unknown layout element name: " <> Text.unpack text
 
 parseElementObject :: JSON.Object -> Parser LayoutElement
@@ -163,32 +146,47 @@ parseElementObject kv
       case KeyMap.toList kv of
         [(name, value)] ->
           case Key.toString name of
-            "hBox" -> parseBox "hBox" EHBox value
-            "vBox" -> parseBox "vBox" EVBox value
+            "hBox" -> parseHBox value
+            "vBox" -> parseVBox value
+            "tabs" -> parseTabs value
             other -> fail $ "Unknown layout element container: " <> other
         _ -> fail "Layout element objects must contain exactly one key."
-  where
-    parseBox boxName constructor value = do
-      items <- JSON.parseJSON value
-      (weights, elements) <- parseBoxItems boxName items
-      pure $ normalizeElement (constructor weights elements)
+ where
+  parseHBox :: JSON.Value -> Parser LayoutElement
+  parseHBox value = do
+    (weights, elements) <- parseWeightedBoxItems "hBox" value
+    pure $ EHBox weights elements
 
-    parseBoxItems _ [] = pure (Nothing, [])
-    parseBoxItems boxName (firstItem : rest) =
-      case firstItem of
-        JSON.Object obj
-          | Just weightsValue <- KeyMap.lookup "weights" obj -> do
-              when
-                (KeyMap.size obj /= 1)
-                (fail $ boxName <> " weights item must only contain the 'weights' key.")
-              weights <- JSON.parseJSON weightsValue
-              elements <- traverse JSON.parseJSON rest
-              pure (Just weights, elements)
-        _ -> do
-          elements <- traverse JSON.parseJSON (firstItem : rest)
-          pure (Nothing, elements)
+  parseVBox :: JSON.Value -> Parser LayoutElement
+  parseVBox value = do
+    (weights, elements) <- parseWeightedBoxItems "vBox" value
+    pure $ EVBox weights elements
 
+  parseTabs :: JSON.Value -> Parser LayoutElement
+  parseTabs value = do
+    elements <- JSON.parseJSON value
+    pure $ ETabs elements
 
+  parseWeightedBoxItems :: String -> JSON.Value -> Parser (Maybe [Double], [LayoutElement])
+  parseWeightedBoxItems boxName value = do
+    items <- JSON.parseJSON value
+    parseBoxItems boxName items
+
+  parseBoxItems :: String -> [JSON.Value] -> Parser (Maybe [Double], [LayoutElement])
+  parseBoxItems _ [] = pure (Nothing, [])
+  parseBoxItems boxName (firstItem : rest) =
+    case firstItem of
+      JSON.Object obj
+        | Just weightsValue <- KeyMap.lookup "weights" obj -> do
+            when
+              (KeyMap.size obj /= 1)
+              (fail $ boxName <> " weights item must only contain the 'weights' key.")
+            weights <- JSON.parseJSON weightsValue
+            elements <- traverse JSON.parseJSON rest
+            pure (Just weights, elements)
+      _ -> do
+        elements <- traverse JSON.parseJSON (firstItem : rest)
+        pure (Nothing, elements)
 
 -- | User-editable configuration loaded from the YAML file.
 data ConfigValue = ConfigValue
@@ -197,7 +195,7 @@ data ConfigValue = ConfigValue
   , _cvEq :: String
   , _cvLayout :: LayoutElement
   }
-  deriving (Eq, Show, Generic, Lift)
+  deriving (Eq, Show, Generic)
 
 makeLenses ''ConfigValue
 
@@ -217,7 +215,7 @@ instance JSON.FromJSON ConfigValue where
       <$> obj JSON..: "showWelcome"
       <*> obj JSON..: "colorMode"
       <*> obj JSON..: "eq"
-      <*> obj JSON..:? "layout" JSON..!= defaultLayout
+      <*> obj JSON..:? "layout" JSON..!= placeholderLayout
 
 instance JSON.ToJSON ConfigValue where
   toJSON = JSON.genericToJSON configValueJsonOptions

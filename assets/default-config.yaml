@@ -35,19 +35,26 @@ eq: default
 #
 # Available layout elements:
 # - albumList
-# - albumSongList
-# - playingQueue
+# - trackList
+# - currentQueue
+# - equalizer
+# - placeholder
+#
+# Tabs can contain any layout element:
+# tabs:
+#   - albumList
+#   - trackList
 #
 # Optional weights can be specified as the first item of an hBox/vBox:
 # hBox:
 #   - weights: [2, 3]
 #   - albumList
-#   - playingQueue
+#   - currentQueue
 layout:
   hBox:
     - weights: [2, 3]
     - albumList
     - vBox:
         - weights: [1, 1]
-        - albumSongList
-        - playingQueue
+        - trackList
+        - currentQueue

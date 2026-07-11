@@ -29,8 +29,10 @@ $defs:
     type: string
     enum:
       - albumList
-      - albumSongList
-      - playingQueue
+      - trackList
+      - currentQueue
+      - equalizer
+      - placeholder
   layoutHBox:
     type: object
     additionalProperties: false
@@ -59,6 +61,16 @@ $defs:
               - $ref: "#/$defs/layoutElement"
         items:
           $ref: "#/$defs/layoutElement"
+  layoutTabs:
+    type: object
+    additionalProperties: false
+    required:
+      - tabs
+    properties:
+      tabs:
+        type: array
+        items:
+          $ref: "#/$defs/layoutElement"
   layoutWeights:
     type: object
     additionalProperties: false
@@ -74,3 +86,4 @@ $defs:
       - $ref: "#/$defs/layoutLeaf"
       - $ref: "#/$defs/layoutHBox"
       - $ref: "#/$defs/layoutVBox"
+      - $ref: "#/$defs/layoutTabs"

@@ -18,13 +18,14 @@ module Types.Helpers (
   stCurrentSongPos,
   stCurrentEQ,
   stCurrentEQIndex,
+  stLayoutElement,
   stShownCurrentTime,
   stIsTriggered,
   formatSecs,
   (.?),
 ) where
 
-import Data.List (sortBy)
+import Data.List (sortBy, (!?))
 import Data.List.NonEmpty (NonEmpty, fromList)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map qualified as Map
@@ -38,7 +39,7 @@ import Text.Read (readMaybe)
 import Types.Core
 import Types.Identity (MName)
 import Types.Model
-import Types.Schemas (EQConfigValue, cvEq)
+import Types.Schemas
 import Utils (formatSecs)
 
 -- | Size reserved for the large now-playing art slot.
@@ -154,6 +155,18 @@ stCurrentEQIndex :: SimpleGetter St (Maybe Int)
 stCurrentEQIndex = to $ \st ->
   -- SAFETY: It is guaranteed at the config loading stage
   Map.lookupIndex (st ^. stConfig . csConfigs . cvEq) (st ^. stConfig . csEQConfigs)
+
+stLayoutElement :: [Int] -> SimpleGetter St (Maybe LayoutElement)
+stLayoutElement path =
+  to $ \st -> lookupElement path (st ^. stConfig . csConfigs . cvLayout)
+
+-- | Lookup an element in the layout tree.
+lookupElement :: [Int] -> LayoutElement -> Maybe LayoutElement
+lookupElement [] a = Just a
+lookupElement (i : is) (EHBox _ es) = es !? i >>= lookupElement is
+lookupElement (i : is) (EVBox _ es) = es !? i >>= lookupElement is
+lookupElement (i : is) (ETabs es) = es !? i >>= lookupElement is
+lookupElement _ _ = Nothing
 
 -- | Lens helper for optional nested fields.
 (.?) :: (Applicative f) => ((Maybe a1 -> f (Maybe a')) -> c) -> (a2 -> a1 -> f a') -> a2 -> c
