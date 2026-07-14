@@ -38,9 +38,9 @@ activeLayerNames st =
     <> maybe [] (pure . mName . DialogLayer) (st ^. stDialogView)
     <> maybe [] (pure . mName . ViewLayer) (st ^. stCurrentView)
  where
-  menuLayer = case st ^. stMenu of
-    Just _ -> [mName MenuLayer]
-    Nothing -> []
+  menuLayer
+    | null (st ^. stMenu . msWidgets) = []
+    | otherwise = [mName MenuLayer]
 
 -- | Extent-reporting widgets that cover lower layers.
 activeOccluderNames :: St -> [MName St]

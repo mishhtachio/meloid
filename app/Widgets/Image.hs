@@ -26,28 +26,30 @@ import Lens.Micro ((^.))
 import Network.MPD qualified as MPD
 import Types
 import Widgets.Common (scrollViewportBy)
+import Widgets.Elements.Common (ElementNode (..), ElementPath, childPaths, pathVariant)
 
 -- | Image placements owned by this view.
 data ImageSlot
   = PlayingImage
-  | AlbumThumbnail Int
+  | AlbumThumbnail ElementPath Int
   deriving (Eq, Show)
 
 -- | The album viewport is a clipping surface for its thumbnail images.
-data AlbumImageClip = AlbumImageClip
+data AlbumImageClip = AlbumImageClip ElementPath
 
 instance Drawable St ImageSlot where
   draw _ _ = W.emptyWidget
   variant PlayingImage = 0
-  variant (AlbumThumbnail index) = index + 1
+  variant (AlbumThumbnail _ index) = index
   parent PlayingImage = Just (ParentView MainView)
-  parent (AlbumThumbnail _) = Just (ParentName $ mName AlbumImageClip)
+  parent (AlbumThumbnail path _) = Just (ParentName $ mName $ AlbumImageClip path)
 
 instance Drawable St AlbumImageClip where
   draw _ _ = W.emptyWidget
-  onMouseScrollUp _ = Just $ scrollViewportBy (mName AlbumImageClip) (negate $ snd albumThumbnailSize)
-  onMouseScrollDown _ = Just $ scrollViewportBy (mName AlbumImageClip) (snd albumThumbnailSize)
-  parent _ = Just (ParentView MainView)
+  onMouseScrollUp (AlbumImageClip path) = Just $ scrollViewportBy (mName $ AlbumImageClip path) (negate $ snd albumThumbnailSize)
+  onMouseScrollDown (AlbumImageClip path) = Just $ scrollViewportBy (mName $ AlbumImageClip path) (snd albumThumbnailSize)
+  parent (AlbumImageClip path) = Just . ParentName . mName $ ElementNode path
+  variant (AlbumImageClip path) = pathVariant path
 
 {- | Render an image using its actual Brick allocation.  The same declaration
 is later consumed by 'Compat.Image' to prepare out-of-band graphics.
@@ -81,12 +83,12 @@ drawPlayingImage st =
   maybe W.emptyWidget (drawImage st) (playingImageSpec st)
 
 -- | Render one image in the album viewport.
-drawAlbumThumbnail :: St -> Int -> B.Widget (MName St)
-drawAlbumThumbnail st index =
+drawAlbumThumbnail :: St -> ElementPath -> Int -> B.Widget (MName St)
+drawAlbumThumbnail st path index =
   B.Widget B.Fixed B.Fixed $ do
-    viewport <- W.unsafeLookupViewport (mName AlbumImageClip)
+    viewport <- W.unsafeLookupViewport (mName $ AlbumImageClip path)
     B.render $
-      case albumThumbnailSpec st index of
+      case albumThumbnailSpec st path index of
         Just spec
           | maybe False (contains index . visibleThumbnailRange) viewport ->
               drawImage st spec
@@ -103,10 +105,10 @@ widgets are discarded by the compatibility backend after extent lookup.
 -}
 imageScene :: St -> B.EventM (MName St) St (ImageScene (MName St))
 imageScene st = do
-  thumbnailIndices <- visibleAlbumThumbnailIndices st
+  thumbnailIndices <- traverse (visibleAlbumThumbnailIndices st) (albumListPaths st)
   pure . ImageScene . catMaybes $
     playingImageSpec st
-      : fmap (albumThumbnailSpec st) thumbnailIndices
+      : [albumThumbnailSpec st path index | (path, indices) <- thumbnailIndices, index <- indices]
 
 playingImageSpec :: St -> Maybe (ImageSpec (MName St))
 playingImageSpec st = do
@@ -119,33 +121,47 @@ playingImageSpec st = do
       , imageSpecFixedSize = Nothing
       }
 
-albumThumbnailSpec :: St -> Int -> Maybe (ImageSpec (MName St))
-albumThumbnailSpec st index = do
+albumThumbnailSpec :: St -> ElementPath -> Int -> Maybe (ImageSpec (MName St))
+albumThumbnailSpec st path index = do
   album <- (st ^. stConfig . csAllAlbums) Vec.!? index
   song <- albumSongs album Vec.!? 0
   pure $
     ImageSpec
-      { imageSpecName = mName $ AlbumThumbnail index
+      { imageSpecName = mName $ AlbumThumbnail path index
       , imageSpecSource = MpdEmbeddedArt $ MPD.toString $ MPD.sgFilePath song
-      , imageSpecClip = Just $ mName AlbumImageClip
+      , imageSpecClip = Just $ mName $ AlbumImageClip path
       , imageSpecFixedSize = Just albumThumbnailSize
       }
 
 {- | Only visible rows need terminal-image conversion.  This avoids scanning
 and scheduling the whole album catalog on every Brick refresh.
 -}
-visibleAlbumThumbnailIndices :: St -> B.EventM (MName St) St [Int]
-visibleAlbumThumbnailIndices st =
-  B.lookupViewport (mName AlbumImageClip) >>= \case
+visibleAlbumThumbnailIndices :: St -> ElementPath -> B.EventM (MName St) St (ElementPath, [Int])
+visibleAlbumThumbnailIndices st path =
+  B.lookupViewport (mName $ AlbumImageClip path) >>= \case
     Nothing ->
-      pure []
+      pure (path, [])
     Just viewport ->
-      pure [start' .. end' - 1]
+      pure (path, [start' .. end' - 1])
      where
       totalAlbums = Vec.length (st ^. stConfig . csAllAlbums)
       (start, end) = visibleThumbnailRange viewport
       start' = max 0 start
       end' = min totalAlbums end
+
+-- | Find every configured album-list node. Hidden tabs and collapsed nodes
+-- have no viewport, so they naturally contribute no image requests.
+albumListPaths :: St -> [ElementPath]
+albumListPaths st = go [] (st ^. stConfig . csConfigs . cvLayout)
+ where
+  go path = \case
+    EAlbumList -> [path]
+    EHBox _ children -> descend path children
+    EVBox _ children -> descend path children
+    ETabs children -> descend path children
+    _ -> []
+
+  descend path children = concatMap (uncurry go) (zip (childPaths children path) children)
 
 visibleThumbnailRange :: B.Viewport -> (Int, Int)
 visibleThumbnailRange viewport =

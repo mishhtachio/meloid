@@ -14,6 +14,8 @@ module Types.Model (
   PlayingSt (..),
   EditSt' (..),
   Environment (..),
+  MenuSt (..),
+  MenuWidget (..),
   St (..),
   Event,
   EditSt,
@@ -64,6 +66,9 @@ module Types.Model (
   -- Dialog lenses
   dsText,
   dsPage,
+  -- MenuSt lenses
+  msWidgets,
+  msLocation,
 ) where
 
 import Brick.BChan (BChan)
@@ -155,6 +160,19 @@ data Environment = Environment
 
 makeLenses ''Environment
 
+data MenuWidget
+  = MWButton String (EventM (MName St) St ())
+  | MWHeader String
+  | MWSubmenu String [MenuWidget]
+
+{- | A transient menu and the widget it is positioned relative to.
+An empty widget list means that no menu is open.
+-}
+data MenuSt = MenuSt
+  { _msWidgets :: [MenuWidget]
+  , _msLocation :: MName St
+  }
+
 -- | The full application state.
 data St
   = St
@@ -168,7 +186,7 @@ data St
   , _stCurrentView :: Maybe ViewName
   , _stLastView :: Maybe ViewName
   , _stDialog :: Maybe DialogSt
-  , _stMenu :: Maybe [(String, EventM (MName St) St ())]
+  , _stMenu :: MenuSt
   , _stMode :: Mode
   , _stDialogView :: Maybe ViewName
   , _stSelectedAlbum :: Maybe Int
@@ -184,6 +202,7 @@ data St
   , _stEnv :: Environment
   }
 
+makeLenses ''MenuSt
 makeLenses ''St
 
 type Event = Event' ConfigSt

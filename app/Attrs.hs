@@ -48,8 +48,8 @@ defaultTheme :: T.Theme
 defaultTheme =
   T.newTheme
     (fg primary)
-    [ (a "button", currentAttr `withForeColor` primary `withStyle` underline)
-    , (a "iconButton", currentAttr `withForeColor` primary `withStyle` bold)
+    [ (a "button", defAttr `withForeColor` primary `withStyle` underline)
+    , (a "iconButton", defAttr `withForeColor` primary `withStyle` bold)
     , (a "button" <> a "pressed", black `on` primary)
     , (a "iconButton" <> a "pressed", black `on` accent)
     , (a "focused", white `on` secondary)

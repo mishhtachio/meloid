@@ -7,9 +7,11 @@ module Widgets.Elements.Common (
   ElementPath,
   ElementNode (..),
   LayoutAxis (..),
+  scaffoldBorderStyle,
   pathVariant,
   displayElementName,
   childPaths,
+  parentPath,
   currentTabElement,
   layoutChildren,
   layoutWeights,
@@ -17,6 +19,7 @@ module Widgets.Elements.Common (
 
 import Brick hiding (Horizontal, Vertical)
 import Brick qualified as W hiding (Horizontal, Vertical)
+import Brick.Widgets.Border.Style qualified as Bd
 import Data.List (mapAccumL, unsnoc, (!?))
 import Data.Map qualified as Map
 import Graphics.Vty qualified as V
@@ -24,23 +27,48 @@ import Lens.Micro
 import Types
 import Utils (weightedSizes)
 
+-- | A zero-based path from the configured layout root to an element.
 type ElementPath = [Int]
 
+{- | A stable drawable identity for a layout node without drawing its body.
+
+Headers and controls use this as their parent so their names remain stable
+when normal rendering is replaced by edit-mode scaffolds.
+-}
 data ElementNode = ElementNode ElementPath
   deriving (Show, Eq)
 
+-- | The primary axis used to distribute a container's children.
 data LayoutAxis = Horizontal | Vertical
 
 instance Drawable St ElementNode where
   draw _ _ = W.emptyWidget
   parent (ElementNode path) = case path of
-    [] -> Just (ParentView MainView)
+    [] -> Nothing
     is -> ParentName . mName . ElementNode . fst <$> unsnoc is
   variant (ElementNode path) = pathVariant path
 
+scaffoldBorderStyle :: Bd.BorderStyle
+scaffoldBorderStyle =
+  Bd.BorderStyle
+    { bsCornerTL = '·'
+    , bsCornerTR = '·'
+    , bsCornerBR = '·'
+    , bsCornerBL = '·'
+    , bsIntersectFull = '+'
+    , bsIntersectL = '+'
+    , bsIntersectR = '+'
+    , bsIntersectT = '+'
+    , bsIntersectB = '+'
+    , bsHorizontal = '-'
+    , bsVertical = '¦'
+    }
+
+-- | Derive a reproducible name variant from an element path.
 pathVariant :: ElementPath -> Int
 pathVariant = foldl' (\acc i -> acc * 131 + i + 1) 0
 
+-- | The user-facing name for leaf elements; containers have no title here.
 displayElementName :: LayoutElement -> String
 displayElementName (EHBox _ _) = ""
 displayElementName (EVBox _ _) = ""
@@ -52,16 +80,24 @@ displayElementName EEqualizer = "EQUALIZER"
 displayElementName ESongInfo = "INFO"
 displayElementName EPlaceholder = "EMPTY"
 
+-- | Construct the immediate child paths of a container.
 childPaths :: [LayoutElement] -> ElementPath -> [ElementPath]
-childPaths children parentPath =
-  fmap (\i -> parentPath <> [i]) [0 .. length children - 1]
+childPaths children path =
+  fmap (\i -> path <> [i]) [0 .. length children - 1]
 
+parentPath :: ElementPath -> Maybe ElementPath
+parentPath = fmap fst . unsnoc
+
+-- | Look up the selected tab and its path, if the selected index is valid.
 currentTabElement :: St -> ElementPath -> [LayoutElement] -> Maybe (ElementPath, LayoutElement)
 currentTabElement st path children =
   let currentTabIndex = Map.findWithDefault 0 path (st ^. stTabStates)
       childPath = childPaths children path !? currentTabIndex
    in childPath >>= \child -> (\element -> (child, element)) <$> (st ^. stLayoutElement child)
 
+{- | Lay out children along one axis while giving collapsed children only their
+rendered size. The remaining cells are distributed by the configured weights.
+-}
 layoutChildren :: LayoutAxis -> Maybe [Double] -> [Bool] -> [(Bool, Widget n)] -> Widget n
 layoutChildren axis configuredWeights gaps children =
   W.Widget W.Greedy W.Greedy $ do

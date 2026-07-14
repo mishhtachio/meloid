@@ -11,6 +11,8 @@ module Compat.Software (
   restartMPDServer,
   restartAudioServer,
   extractExtraInfo,
+  getMPDProcessId,
+  getMPDSocket,
 ) where
 
 import Brick qualified as B
@@ -21,7 +23,8 @@ import Control.Monad.Trans.Except
 import Data.Aeson qualified as JSON
 import Data.Aeson.KeyMap qualified as JSON
 import Data.ByteString.Lazy.Char8 qualified as BL8
-import Data.List (isPrefixOf)
+import Data.List (isPrefixOf, uncons)
+import Data.Maybe (catMaybes)
 import Data.Scientific qualified as Sci
 import Data.Text qualified as Txt
 import Data.Vector qualified as Vec
@@ -31,8 +34,9 @@ import Lens.Micro
 import Lens.Micro.Mtl
 import Network.MPD qualified as MPD
 import System.Directory
-import System.Process (readProcess, readProcessWithExitCode)
-import Text.Read (readMaybe)
+import System.Process qualified as Sys
+import Text.Printf (printf)
+import Text.Read (readEither, readMaybe)
 import Types
 import Utils
 
@@ -41,8 +45,46 @@ data AudioServer
   = PipeWire -- For now, we only support PulseAudio
   deriving (Eq)
 
+data SocketType = IPv4 | IPv6
+
+instance Read SocketType where
+  readsPrec _ "IPv4" = [(IPv4, "")]
+  readsPrec _ "IPv6" = [(IPv6, "")]
+  readsPrec _ _ = []
+
 instance Show AudioServer where
   show PipeWire = "pipewire"
+
+readProcess :: FilePath -> [String] -> String -> ExceptT String IO String
+readProcess cmd args input =
+  do
+    (code, stdout, stderr) <-
+      ExceptT $
+        tryJust @IOException (\err -> Just $ show err) $
+          Sys.readProcessWithExitCode cmd args input
+    when (code /= ExitSuccess) $ throwE $ printf "%s failed with exit code %s: %s" cmd (show code) stderr
+    pure stdout
+
+-- | Get the MPD process ID
+getMPDProcessId :: ExceptT String IO Int
+getMPDProcessId = do
+  res <- readProcess "systemctl" ["-user", "show", "mpd.service", "-p", "MainPID", "--value"] ""
+  when (null res) $ throwE "Failed to get MPD process ID"
+  ExceptT $ pure $ readEither res
+
+-- | Get the MPD socket
+getMPDSocket :: ExceptT String IO (SocketType, String, String)
+getMPDSocket = do
+  id' <- getMPDProcessId
+  res <-
+    catMaybes
+      . fmap uncons
+      . lines
+      <$> readProcess "lsof" ["-Pan", "-a", "-p", show id', "-i", "-Ftn"] ""
+  socket <- maybe (throwE "Failed to get MPD socket") pure $ lookup 'n' res
+  ipType <- maybe (throwE "Failed to get MPD IP type") pure $ lookup 't' res
+  let (ip, port) = break (== ':') socket
+  pure (read ipType, ip, port)
 
 pipewireModuleTemplate :: String
 pipewireModuleTemplate =
@@ -71,20 +113,15 @@ updateModuleEQId PipeWire eqId = do
 -- | Restart the audio server.
 restartAudioServer :: AudioServer -> ExceptT String IO ()
 restartAudioServer PipeWire =
-  -- run `systemctl --user restart pipewire pipewire-pulse wireplumber`
-  ExceptT $
-    tryJust @SomeException (\err -> Just $ "Failed to restart audio server: \n" <> show err) $
-      void $
-        readProcess "systemctl" ["--user", "restart", "pipewire", "pipewire-pulse", "wireplumber"] ""
+  void $
+    readProcess "systemctl" ["--user", "restart", "pipewire", "pipewire-pulse", "wireplumber"] ""
 
 -- | Restart the MPD server
 restartMPDServer :: ExceptT String IO ()
 restartMPDServer =
   -- run `systemctl --user restart mpd`
-  ExceptT $
-    tryJust @SomeException (\err -> Just $ "Failed to restart MPD server: \n" <> show err) $
-      void $
-        readProcess "systemctl" ["--user", "restart", "mpd"] ""
+  void $
+    readProcess "systemctl" ["--user", "restart", "mpd"] ""
 
 -- | Extract extra information from a song
 extractExtraInfo :: MPD.Song -> B.EventM (MName St) St (Either String SongFileExtraInfo)
@@ -92,25 +129,20 @@ extractExtraInfo MPD.Song{MPD.sgFilePath = path} = do
   path' <- use $ stConfig . csMusicDir . to (<> "/" <> MPD.toString path)
   liftIO $ runExceptT $ do
     fileSize <- liftIO $ getFileSize path'
-    (code, stdout, stderr) <-
-      ExceptT $
-        tryJust @IOException (\err -> Just $ "Failed to run ffprobe: \n" <> show err) $
-          readProcessWithExitCode
-            "ffprobe"
-            [ "-v"
-            , "error"
-            , "-select_streams"
-            , "a:0"
-            , "-show_entries"
-            , "stream=sample_rate,channels,bit_rate:format=bit_rate"
-            , "-of"
-            , "json"
-            , path'
-            ]
-            ""
-    when
-      (code /= ExitSuccess)
-      (throwE $ "ffprobe failed with exit code " <> show code <> ": " <> stderr)
+    stdout <-
+      readProcess
+        "ffprobe"
+        [ "-v"
+        , "error"
+        , "-select_streams"
+        , "a:0"
+        , "-show_entries"
+        , "stream=sample_rate,channels,bit_rate:format=bit_rate"
+        , "-of"
+        , "json"
+        , path'
+        ]
+        ""
     decoded <-
       maybe
         (throwE "Failed to decode ffprobe output")

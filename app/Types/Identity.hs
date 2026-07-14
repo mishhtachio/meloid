@@ -15,6 +15,7 @@ module Types.Identity (
   Drawable (..),
   NameKey,
   ViewName (..),
+  placeholderName,
   mName,
   drawMName,
   drawNamed,
@@ -70,6 +71,14 @@ class (Typeable a) => Drawable st a | a -> st where
   parent _ = Nothing
   variant :: a -> Int
   variant _ = 0
+
+data PlaceholderName st = PlaceholderName
+
+instance (Typeable st) => Drawable st (PlaceholderName st) where
+  draw _ _ = B.emptyWidget
+
+placeholderName :: forall st. (Typeable st) => MName st
+placeholderName = mName (PlaceholderName @st)
 
 {- | A stable comparison key for widget identity.
 The key uses the concrete widget type, its variant, and

@@ -72,7 +72,6 @@ songChangeLoopThread evChan = MPD.withMPD $ forever $ do
 musicPlayerThread :: BChan Request -> BChan Event -> IO ()
 musicPlayerThread reqChan evChan = do
   res0 <- trace $ MPD.withMPD MPD.status
-
   case res0 of
     Left _ ->
       panic $
@@ -106,8 +105,9 @@ musicPlayerThread reqChan evChan = do
 
   -- Restart audio server
   -- Currently, Pipewire is the only supported audio server
-  runExceptT (restartAudioServer PipeWire) >>= either panic pure
-  log $ "Audio server is restarted successfully: " <> show PipeWire
+  -- TODO: Restarting is still unstable
+  -- runExceptT (restartAudioServer PipeWire) >>= either panic pure
+  -- log $ "Audio server is restarted successfully: " <> show PipeWire
 
   forever $ do
     req <- readBChan reqChan

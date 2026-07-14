@@ -15,16 +15,19 @@ module Types.Actions (
   sendRequest,
   trigger,
   unTrigger,
+  openMenu,
+  closeMenu,
 ) where
 
 import Brick.BChan (writeBChan)
 import Brick.Types (EventM)
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Set qualified as Set
+import Lens.Micro (to)
 import Lens.Micro.Mtl
 import Types.Core
-import Types.Identity (MName, ViewName)
+import Types.Identity (MName, ViewName, placeholderName)
 import Types.Model
 
 -- | Mark the application as panicked so the outer loop can stop.
@@ -82,3 +85,13 @@ This means removing the widget from the stTriggeredNames set.
 -}
 unTrigger :: MName St -> EventM (MName St) St ()
 unTrigger name = stTriggeredNames %= Set.delete name
+
+-- | Opens a menu relative to a stable widget name.
+openMenu :: MName St -> [MenuWidget] -> EventM (MName St) St ()
+openMenu location widgets = stMenu .= MenuSt widgets location
+
+-- | Closes the currently open menu
+closeMenu :: EventM (MName St) St ()
+closeMenu = do
+  isOpenned <- use (stMenu . msWidgets . to (not . null))
+  when isOpenned $ stMenu .= MenuSt [] placeholderName

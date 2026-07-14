@@ -23,15 +23,19 @@ import Widgets.Common (strClippedWithEllipsis)
 import Widgets.Controls
 import Widgets.Elements.Common
 
+-- | The header paired with an element's normal-mode frame.
 data HeaderName = HeaderName ElementPath
   deriving (Show, Eq)
 
+-- | A collapse control for ordinary, named leaf elements.
 data CollapsingSwitch = CollapsingSwitch ElementPath
   deriving (Show, Eq)
 
+-- | A compact collapse control used by tab containers.
 data CollapsingSwitch' = CollapsingSwitch' ElementPath
   deriving (Show, Eq)
 
+-- | A tab selector identified by its child element path.
 data TabButton = TabButton ElementPath
   deriving (Show, Eq)
 
@@ -92,20 +96,21 @@ instance Drawable St TabButton where
     isCurrentTab =
       case unsnoc path of
         Nothing -> False
-        Just (parentPath, childIndex) ->
-          Map.findWithDefault 0 parentPath (st ^. stTabStates) == childIndex
+        Just (parentPath', childIndex) ->
+          Map.findWithDefault 0 parentPath' (st ^. stTabStates) == childIndex
 
   parent (TabButton path) =
     case unsnoc path of
       Nothing -> Nothing
-      Just (parentPath, _) -> Just . ParentName . mName $ ElementNode parentPath
+      Just (parentPath', _) -> Just . ParentName . mName $ ElementNode parentPath'
   variant (TabButton path) = pathVariant path
   onMouseLeftUp (TabButton path) = Just $ \_ ->
     case unsnoc path of
       Nothing -> pure ()
-      Just (parentPath, childIndex) ->
-        stTabStates %= Map.insert parentPath childIndex
+      Just (parentPath', childIndex) ->
+        stTabStates %= Map.insert parentPath' childIndex
 
+-- | Draw the one-line header that remains when an element is collapsed.
 drawCollapsedHeader :: ElementPath -> St -> Widget (MName St)
 drawCollapsedHeader path st =
   W.vLimit 1 $
@@ -113,6 +118,11 @@ drawCollapsedHeader path st =
       Just ETabs{} -> drawNamed st (CollapsingSwitch' path)
       _ -> drawNamed st (CollapsingSwitch path)
 
+{- | Build the header pieces for an expanded element.
+
+Tab containers append the current tab body's header pieces after their tab
+selectors, avoiding a second frame around the selected child.
+-}
 drawHeader :: ElementPath -> St -> LayoutElement -> [Widget (MName St)]
 drawHeader path st = \case
   EAlbumList ->
@@ -136,7 +146,7 @@ drawHeader path st = \case
   EEqualizer ->
     [ drawNamed st $ CollapsingSwitch path
     , W.fill ' '
-    , W.padLeft W.Max $ drawNamed st EQSwitch
+    , W.padLeft W.Max $ drawNamed st (EQSwitch path)
     ]
   ESongInfo ->
     [ drawNamed st $ CollapsingSwitch path

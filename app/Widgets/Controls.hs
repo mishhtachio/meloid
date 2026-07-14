@@ -35,14 +35,15 @@ import Network.MPD qualified as MPD
 import Types
 import Utils
 import Widgets.Common
+import Widgets.Elements.Common (ElementNode (..), ElementPath, pathVariant)
 
 data VolumeBar = VolumeBar
 
 data SongProgressBar = SongProgressBar
 
-data EQGainBarsViewport = EQGainBarsViewport
+data EQGainBarsViewport = EQGainBarsViewport ElementPath
 
-data EQGainBar = EQGainBar Int
+data EQGainBar = EQGainBar ElementPath Int
 
 data PlayButton = PlayButton
 
@@ -66,7 +67,7 @@ data ShuffleButton = ShuffleButton
 
 data ClearButton = ClearButton
 
-data EQSwitch = EQSwitch
+data EQSwitch = EQSwitch ElementPath
 
 volumeBarWidth :: Int
 volumeBarWidth = 21
@@ -135,22 +136,23 @@ instance Drawable St SongProgressBar where
   parent _ = Just (ParentView MainView)
 
 instance Drawable St EQGainBarsViewport where
-  draw _ st =
-    W.viewport (mName EQGainBarsViewport) Horizontal $
+  draw (EQGainBarsViewport path) st =
+    W.viewport (mName $ EQGainBarsViewport path) Horizontal $
       W.hBox
-        [ W.padRight (W.Pad 1) $ drawNamed st (EQGainBar i)
+        [ W.padRight (W.Pad 1) $ drawNamed st (EQGainBar path i)
         | i <- zipWith const [0 ..] (st ^. stCurrentEQ . eqBands)
         ]
-  onMouseScrollUp _ =
+  onMouseScrollUp (EQGainBarsViewport path) =
     Just $
-      M.hScrollBy (viewportScroll (mName EQGainBarsViewport)) (-eqGainBarsViewportStep)
-  onMouseScrollDown _ =
+      M.hScrollBy (viewportScroll (mName $ EQGainBarsViewport path)) (-eqGainBarsViewportStep)
+  onMouseScrollDown (EQGainBarsViewport path) =
     Just $
-      M.hScrollBy (viewportScroll (mName EQGainBarsViewport)) eqGainBarsViewportStep
-  parent _ = Just (ParentView MainView)
+      M.hScrollBy (viewportScroll (mName $ EQGainBarsViewport path)) eqGainBarsViewportStep
+  parent (EQGainBarsViewport path) = Just . ParentName . mName $ ElementNode path
+  variant (EQGainBarsViewport path) = pathVariant path
 
 instance Drawable St EQGainBar where
-  draw (EQGainBar i) st =
+  draw (EQGainBar _ i) st =
     case listToMaybe (drop i (st ^. stCurrentEQ . eqBands)) of
       Nothing ->
         W.emptyWidget
@@ -186,18 +188,18 @@ instance Drawable St EQGainBar where
                        W.str (centerText eqGainBarWidth freqLabel)
                    ]
   willReportExtent _ = True
-  onMouseLeftDown (EQGainBar i) =
+  onMouseLeftDown (EQGainBar path i) =
     Just $ \(Location (_, ay)) ->
-      updateEQGainBarAt i ay
-  onMouseLeftUp (EQGainBar i) =
+      updateEQGainBarAt path i ay
+  onMouseLeftUp (EQGainBar path i) =
     Just $ \(Location (_, ay)) ->
-      updateEQGainBarAt i ay
-  onMouseScrollUp' (EQGainBar i) =
+      updateEQGainBarAt path i ay
+  onMouseScrollUp' (EQGainBar _ i) =
     Just $ currentEQGainBarValue i >>= setEQGainBarValue i . (+ 1)
-  onMouseScrollDown' (EQGainBar i) =
+  onMouseScrollDown' (EQGainBar _ i) =
     Just $ currentEQGainBarValue i >>= setEQGainBarValue i . (subtract 1)
-  parent _ = Just (ParentName (mName EQGainBarsViewport))
-  variant (EQGainBar i) = i
+  parent (EQGainBar path _) = Just (ParentName $ mName $ EQGainBarsViewport path)
+  variant (EQGainBar _ i) = i
 
 instance Drawable St PlayButton where
   draw _ st =
@@ -286,16 +288,17 @@ instance Drawable St ClearButton where
   parent _ = Just (ParentView MainView)
 
 instance Drawable St EQSwitch where
-  draw _ st = drawButton st (mName EQSwitch) icon
+  draw n@(EQSwitch _) st = drawButton st (mName n) icon
    where
     icon
-      | st ^. stIsTriggered (mName EQSwitch) = " GO CURVE "
+      | st ^. stIsTriggered (mName n) = " GO CURVE "
       | otherwise = " GO TWEAK "
   onMouseLeftUp n = Just $ \_ ->
     use (stIsTriggered (mName n)) >>= \case
       True -> unTrigger (mName n)
       False -> trigger (mName n)
-  parent _ = Just (ParentView MainView)
+  parent (EQSwitch path) = Just . ParentName . mName $ ElementNode path
+  variant (EQSwitch path) = pathVariant path
 
 reverseQueueMoves :: Int -> [(MPD.Position, MPD.Position)]
 reverseQueueMoves queueLength =
@@ -321,9 +324,9 @@ setVolumeBarValue volume = do
   stConfig . csVolume .= fromIntegral clampedVolume
   sendRequest $ MPDOperation [MPD.setVolume (fromIntegral clampedVolume)]
 
-updateEQGainBarAt :: Int -> Int -> EventM (MName St) St ()
-updateEQGainBarAt bandIndex y =
-  M.lookupExtent (mName (EQGainBar bandIndex)) >>= \case
+updateEQGainBarAt :: ElementPath -> Int -> Int -> EventM (MName St) St ()
+updateEQGainBarAt path bandIndex y =
+  M.lookupExtent (mName $ EQGainBar path bandIndex) >>= \case
     Just extent -> do
       let (_, height) = extentSize extent
           sliderHeight = max 3 (height - 2)

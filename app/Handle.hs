@@ -37,6 +37,7 @@ import Network.MPD qualified as MPD
 import Types
 import Widgets.Image (imageScene)
 import Widgets.Layer (activeOccluderNames)
+import Widgets.Lists (MenuEntry (..))
 
 -- | The entrance point for handling events
 handleEvent :: Image.ImageService -> BrickEvent (MName St) Event -> EventM (MName St) St ()
@@ -60,23 +61,27 @@ events defined in the type class `Drawable`
 handleEvent' :: Image.ImageService -> BrickEvent (MName St) Event -> EventM (MName St) St ()
 handleEvent' imageService = \case
   MouseDown name V.BScrollDown modifiers _ ->
-    void $
-      dispatchToFirst name $
-        if V.MCtrl `elem` modifiers
-          then named onMouseScrollDown'
-          else named onMouseScrollDown
+    dismissMenuOutside name >>= \dismissed ->
+      unless dismissed . void $
+        dispatchToFirst name $
+          if V.MCtrl `elem` modifiers
+            then named onMouseScrollDown'
+            else named onMouseScrollDown
   MouseDown name V.BScrollUp modifiers _ ->
-    void $
-      dispatchToFirst name $
-        if V.MCtrl `elem` modifiers
-          then named onMouseScrollUp'
-          else named onMouseScrollUp
+    dismissMenuOutside name >>= \dismissed ->
+      unless dismissed . void $
+        dispatchToFirst name $
+          if V.MCtrl `elem` modifiers
+            then named onMouseScrollUp'
+            else named onMouseScrollUp
   MouseDown name V.BLeft _ location ->
-    handleLeftMouseDown name location
+    dismissMenuOutside name >>= \dismissed ->
+      unless dismissed $ handleLeftMouseDown name location
   MouseUp name (Just V.BLeft) location ->
     handleLeftMouseUp name location
   MouseUp name (Just V.BRight) location ->
-    handleRightMouseUp name location
+    dismissMenuOutside name >>= \dismissed ->
+      unless dismissed $ handleRightMouseUp name location
   AppEvent appEvent ->
     handleAppEvent imageService appEvent
   _ ->
@@ -88,6 +93,8 @@ to the local or app event handlers
 -}
 handleGlobalEvent :: Image.ImageService -> BrickEvent (MName St) Event -> EventM (MName St) St Bool
 handleGlobalEvent imageService = \case
+  -- Blank cells in a relative popup remain raw Vty mouse events.
+  VtyEvent V.EvMouseDown{} -> dismissOpenMenu
   -- Ctrl + C to quit
   VtyEvent (V.EvKey (V.KChar 'c') [V.MCtrl]) ->
     sendRequest SignalQuit $> True
@@ -96,10 +103,10 @@ handleGlobalEvent imageService = \case
     queueMainViewRefresh imageService $> True
   -- Toggle debug view
   VtyEvent (V.EvKey (V.KChar 'd') [V.MCtrl]) -> do
-    toggleDebugView imageService $> True
+    closeMenu >> toggleDebugView imageService $> True
   -- Toggle modes. See `Mode` for details
   VtyEvent (V.EvKey (V.KChar '`') []) ->
-    clearCommandEdit >> switchMode $> True
+    closeMenu >> clearCommandEdit >> switchMode $> True
   -- Submit command
   VtyEvent (V.EvKey V.KEnter []) ->
     submitCommandEdit >> clearCommandEdit $> True
@@ -111,6 +118,22 @@ handleGlobalEvent imageService = \case
 
   clearCommandEdit =
     stEdits . esCommand %= E.applyEdit (const (TZ.stringZipper [] Nothing))
+
+{- | Close an open menu for a pointer event outside the popup and consume that
+event so it cannot also activate the underlying widget.
+-}
+dismissMenuOutside :: MName St -> EventM (MName St) St Bool
+dismissMenuOutside name
+  | isJust (castMName name :: Maybe MenuEntry) = pure False
+  | otherwise = dismissOpenMenu
+
+-- | Close the menu if present and report whether the event was consumed.
+dismissOpenMenu :: EventM (MName St) St Bool
+dismissOpenMenu = do
+  isOpen <- use (stMenu . msWidgets . to (not . null))
+  if isOpen
+    then closeMenu $> True
+    else pure False
 
 -- | The function that handles the app events.
 handleAppEvent :: Image.ImageService -> Event -> EventM (MName St) St ()

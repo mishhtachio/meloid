@@ -12,11 +12,12 @@ import Graphics.Vty.Image qualified as I
 import Lens.Micro
 import Types
 import Utils (clampValue, eqGainBarNudgeLimitDb, formatFrequencyLabel)
+import Widgets.Elements.Common (ElementNode (..), ElementPath, pathVariant)
 
 {- | This widget is a visualizer for the equalizer curve.
 Its state is associated with EQ config and current EQ ID.
 -}
-data EQCurveVisualizer = EQCurveVisualizer
+data EQCurveVisualizer = EQCurveVisualizer ElementPath
 
 data EQPalette = EQPalette
   { eqDefaultAttr :: A.Attr
@@ -34,8 +35,8 @@ instance Drawable St EQCurveVisualizer where
         h = ctx ^. B.availHeightL
         eq = st ^. stCurrentEQ
     B.render . B.raw $ renderEQCurveImage palette w h eq
-  parent :: EQCurveVisualizer -> Maybe (ParentRef St)
-  parent _ = Just (ParentView MainView)
+  parent (EQCurveVisualizer path) = Just . ParentName . mName $ ElementNode path
+  variant (EQCurveVisualizer path) = pathVariant path
 
 lookupEQPalette :: B.RenderM n EQPalette
 lookupEQPalette =

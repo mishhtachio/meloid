@@ -34,7 +34,6 @@ import Data.Typeable (Typeable)
 import Data.Vector qualified as Vec
 import Graphics.Vty qualified as V
 import Lens.Micro (to, (^.))
-import Lens.Micro.Mtl
 import Network.MPD qualified as MPD
 import Types
 import Utils (ceilingDiv)
@@ -44,8 +43,8 @@ pressed.
 -}
 drawButton :: St -> MName St -> String -> Widget (MName St)
 drawButton st name label =
-  W.withAttr (attrName "button" <> pressedAttr st name) $
-    strClippedWithEllipsis label
+  W.withDefAttr (attrName "button" <> pressedAttr st name) $
+    W.str label
 
 {- | Draws an icon button which is similar to a button but it has a
 more conspicuous look. Fonts are also bolder.
@@ -62,10 +61,6 @@ drawGeneralButton :: St -> MName St -> Widget (MName St) -> Widget (MName St)
 drawGeneralButton st name inner
   | st ^. stPressed == Just name = W.withDefAttr (attrName "focused") inner
   | otherwise = inner
-
--- | Opens a menu.
-openMenu :: [(String, EventM (MName St) St ())] -> EventM (MName St) St ()
-openMenu = (stMenu .=) . Just
 
 {- | A scroll bar for a viewport, which provides a draggable thumb
 to scroll the viewport.

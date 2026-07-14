@@ -12,7 +12,6 @@ module Widgets.Elements.Element (
 import Brick hiding (Horizontal, Vertical)
 import Brick qualified as W hiding (Horizontal, Vertical)
 import Data.Bool (bool)
-import Data.List (unsnoc)
 import Data.Map qualified as Map
 import Lens.Micro
 import Types
@@ -23,6 +22,7 @@ import Widgets.Elements.Scaffold (ElementScaffoldName (..))
 import Widgets.Lists
 import Widgets.Visual.EQ
 
+-- | The normal-mode drawable identity of an element at a layout path.
 data ElementName = ElementName ElementPath
   deriving (Show, Eq)
 
@@ -33,11 +33,10 @@ instance Drawable St ElementName where
         case st ^. stLayoutElement path of
           Nothing -> W.emptyWidget
           Just element -> drawElement path st element
-  parent (ElementName path) = case path of
-    [] -> Just (ParentView MainView)
-    is -> ParentName . mName . ElementNode . fst <$> unsnoc is
+  parent (ElementName path) = Just . ParentName . mName $ ElementNode path
   variant (ElementName path) = pathVariant path
 
+-- | Render a layout subtree, framing leaves with their element header.
 drawElement :: ElementPath -> St -> LayoutElement -> Widget (MName St)
 drawElement rootPath st = go True rootPath
  where
@@ -50,15 +49,15 @@ drawElement rootPath st = go True rootPath
       frame framed currentPath $
         maybe W.emptyWidget (uncurry (go False)) (currentTabElement st currentPath children)
     EAlbumList ->
-      frame framed currentPath $ drawNamed st AllAlbumList
+      frame framed currentPath $ drawNamed st (AllAlbumList currentPath)
     ETrackList ->
-      frame framed currentPath $ drawNamed st TrackList
+      frame framed currentPath $ drawNamed st (TrackList currentPath)
     ECurrentQueue ->
-      frame framed currentPath $ drawNamed st QueueSongList
+      frame framed currentPath $ drawNamed st (QueueSongList currentPath)
     EEqualizer ->
-      frame framed currentPath $ drawEqualizerPanel st
+      frame framed currentPath $ drawEqualizerPanel currentPath st
     ESongInfo ->
-      frame framed currentPath $ drawNamed st SongInfoList
+      frame framed currentPath $ drawNamed st (SongInfoList currentPath)
     EPlaceholder ->
       W.emptyWidget
 
@@ -113,13 +112,14 @@ drawElement rootPath st = go True rootPath
   needsSpacing (leftPath, left) (rightPath, right) =
     not $ hasScrollBar leftPath left || hasScrollBar rightPath right
 
-drawEqualizerPanel :: St -> Widget (MName St)
-drawEqualizerPanel st
+-- | Draw the equalizer's list and active editor side by side.
+drawEqualizerPanel :: ElementPath -> St -> Widget (MName St)
+drawEqualizerPanel _ st
   | Map.null (st ^. stConfig . csEQConfigs) = W.emptyWidget
-drawEqualizerPanel st =
+drawEqualizerPanel path st =
   W.hBox
-    [ W.hLimit 11 $ drawNamed st EQConfigList
-    , case st ^. stIsTriggered (mName EQSwitch) of
-        False -> drawNamed st EQCurveVisualizer
-        True -> W.padLeft (W.Pad 1) $ drawNamed st EQGainBarsViewport
+    [ W.hLimit 11 $ drawNamed st (EQConfigList path)
+    , case st ^. stIsTriggered (mName $ EQSwitch path) of
+        False -> drawNamed st (EQCurveVisualizer path)
+        True -> W.padLeft (W.Pad 1) $ drawNamed st (EQGainBarsViewport path)
     ]
