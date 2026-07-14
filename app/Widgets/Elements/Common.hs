@@ -77,6 +77,7 @@ displayElementName EAlbumList = "ALBUMS"
 displayElementName ETrackList = "TRACKS"
 displayElementName ECurrentQueue = "QUEUE"
 displayElementName EEqualizer = "EQUALIZER"
+displayElementName ESpectrum = "SPECTRUM"
 displayElementName ESongInfo = "INFO"
 displayElementName EPlaceholder = "EMPTY"
 

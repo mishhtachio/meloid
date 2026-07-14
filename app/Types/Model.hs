@@ -12,6 +12,7 @@ module Types.Model (
   SongFileExtraInfo (..),
   ConfigSt (..),
   PlayingSt (..),
+  SpectrumSt (..),
   EditSt' (..),
   Environment (..),
   MenuSt (..),
@@ -39,6 +40,7 @@ module Types.Model (
   stSelectedSong,
   stConfig,
   stPlaying,
+  stSpectrum,
   stLogs,
   stChannel,
   stImageCache,
@@ -60,6 +62,8 @@ module Types.Model (
   psCurrentTime,
   psCurrentQueue,
   psPaused,
+  -- SpectrumSt lenses
+  ssLevels,
   -- EditSt' lenses
   esCommand,
   -- Environment lenses
@@ -151,6 +155,13 @@ data PlayingSt = PlayingSt
 
 makeLenses ''PlayingSt
 
+-- | The latest frequency-band loudness values in dBFS, low to high.
+data SpectrumSt = SpectrumSt
+  { _ssLevels :: Vec.Vector Double
+  }
+
+makeLenses ''SpectrumSt
+
 -- | Editor state parameterized by the application state type.
 data EditSt' st = EditSt
   { _esCommand :: E.Editor String (MName st)
@@ -200,6 +211,7 @@ data St
   , _stSelectedSong :: Maybe (MPD.Song, SongFileExtraInfo)
   , _stConfig :: ConfigSt
   , _stPlaying :: PlayingSt
+  , _stSpectrum :: SpectrumSt
   , _stLogs :: [(LogLevel, String)]
   , _stChannel :: Maybe (BChan Request)
   , _stImageCache :: ImageCache

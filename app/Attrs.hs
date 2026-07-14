@@ -9,6 +9,7 @@ themes from files, which is provided by Brick.
 module Attrs (
   ColorMode (..),
   accent,
+  accent2,
   defaultTheme,
   primary,
 ) where
@@ -43,6 +44,10 @@ secondary = hex2RGB 0x6F6F6F
 accent :: Color
 accent = hex2RGB 0xCCBBCC
 
+-- | A muted sage complement for the lavender primary accent.
+accent2 :: Color
+accent2 = hex2RGB 0xB8CFAF
+
 -- The default theme.
 defaultTheme :: T.Theme
 defaultTheme =
@@ -70,6 +75,12 @@ defaultTheme =
     , (a "eqAccent", currentAttr `withForeColor` accent)
     , (a "eqAccentBold", currentAttr `withForeColor` accent `withStyle` bold)
     , (a "eqPrimaryBold", currentAttr `withForeColor` primary `withStyle` bold)
+    , -- Spectrum
+      (a "spectrumLow", fg accent2)
+    , (a "spectrumAccent", currentAttr `withForeColor` accent)
+    , (a "spectrumPeak", currentAttr `withForeColor` brightYellow `withStyle` bold)
+    , (a "spectrumAxis", fg brightBlack)
+    , (a "spectrumLabel", currentAttr `withForeColor` accent `withStyle` bold)
     , -- Log
       (a "debugLog", fg $ brightBlack)
     , (a "infoLog", fg $ white)

@@ -31,6 +31,7 @@ data Event' a
   | UpdateStatus MPD.Status
   | UpdateTime (Maybe (Double, Double))
   | UpdateCurrentQueueState MPD.Status (Maybe MPD.Song) (Vec.Vector MPD.Song)
+  | UpdateSpectrum (Vec.Vector Double)
   | ImagesReady
   | UpdateConfig a
   | Halt
@@ -43,6 +44,7 @@ data Request
   | SignalCurrentQueue
   | LogConfig LogLevel String
   | UpdateEQId String
+  | TriggerSpectrum Bool
   | GetConfig
 
 -- | Log levels used by the in-app log view.

@@ -181,6 +181,9 @@ handleAppEvent imageService = \case
     stConfig . csVolume ?.= MPD.stVolume status
     stPlaying . psCurrentQueue .= songs
     applyCurrentSong imageService song
+  -- Update the post-EQ PipeWire spectrum without involving MPD state.
+  UpdateSpectrum levels ->
+    stSpectrum . ssLevels .= levels
   -- Update the config. The config includes things to be
   -- accquired when the program starts
   UpdateConfig config -> do
@@ -299,6 +302,7 @@ handleStartEvent = do
   termType <- liftIO Term.deduceTerminalType
   stEnv .= Environment termType (Term.deduceFormat termType)
   sendRequest SignalInit
+  sendRequest $ TriggerSpectrum True
   sendRequest GetConfig
   sendRequest SignalCurrentQueue
   sendRequest . LogConfig Info $

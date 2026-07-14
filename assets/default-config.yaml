@@ -38,6 +38,7 @@ eq: default
 # - trackList
 # - currentQueue
 # - equalizer
+# - spectrum
 # - placeholder
 #
 # Tabs can contain any layout element:

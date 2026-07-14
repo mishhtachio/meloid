@@ -108,7 +108,7 @@ createSelectionMenu p action =
           ]
    in let panelWidgets =
             filter p $
-              [EAlbumList, ETrackList, ESongInfo, ECurrentQueue, EEqualizer, EPlaceholder]
+              [EAlbumList, ETrackList, ESongInfo, ECurrentQueue, EEqualizer, ESpectrum, EPlaceholder]
        in layoutWidgets <|> MWHeader "Containers"
             <> (layoutWidgets <&> \w -> MWButton (formatElementName w) (action w))
             <> panelWidgets <|> MWHeader "Panels"

@@ -21,6 +21,7 @@ import Widgets.Elements.Header (HeaderName (..), drawCollapsedHeader)
 import Widgets.Elements.Scaffold (ElementScaffoldName (..))
 import Widgets.Lists
 import Widgets.Visual.EQ
+import Widgets.Visual.Spectrum
 
 -- | The normal-mode drawable identity of an element at a layout path.
 data ElementName = ElementName ElementPath
@@ -56,6 +57,8 @@ drawElement rootPath st = go True rootPath
       frame framed currentPath $ drawNamed st (QueueSongList currentPath)
     EEqualizer ->
       frame framed currentPath $ drawEqualizerPanel currentPath st
+    ESpectrum ->
+      frame framed currentPath $ drawNamed st (SpectrumVisualizer currentPath)
     ESongInfo ->
       frame framed currentPath $ drawNamed st (SongInfoList currentPath)
     EPlaceholder ->
@@ -100,6 +103,7 @@ drawElement rootPath st = go True rootPath
     ETrackList -> True
     ECurrentQueue -> True
     EEqualizer -> True
+    ESpectrum -> False
     ESongInfo -> True
     EPlaceholder -> False
     EHBox _ children -> any (uncurry hasScrollBar) (zip (childPaths children currentPath) children)

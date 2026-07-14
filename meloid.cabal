@@ -109,6 +109,7 @@ executable meloid
     stm,
     utf8-string,
     bytestring,
+    binary,
     vector,
     vector-algorithms,
     vty-crossplatform,

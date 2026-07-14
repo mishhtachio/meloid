@@ -148,6 +148,10 @@ drawHeader path st = \case
     , W.fill ' '
     , W.padLeft W.Max $ drawNamed st (EQSwitch path)
     ]
+  ESpectrum ->
+    [ drawNamed st $ CollapsingSwitch path
+    , W.fill ' '
+    ]
   ESongInfo ->
     [ drawNamed st $ CollapsingSwitch path
     , W.fill ' '

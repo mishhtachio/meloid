@@ -12,6 +12,7 @@ module Sys (musicPlayerThread) where
 import Brick.BChan
 import Compat.Software
 import Control.Concurrent (forkIO, threadDelay)
+import Control.Concurrent.STM (TVar, atomically, writeTVar)
 import Control.Exception (AsyncException (ThreadKilled), SomeException, throwIO, try)
 import Control.Monad
 import Control.Monad.Except (ExceptT (ExceptT))
@@ -72,8 +73,8 @@ songChangeLoopThread ip port evChan = withMPD ip port $ forever $ do
   postEvent = writeBChan evChan
 
 -- | The main loop of the MPD backend
-musicPlayerThread :: BChan Request -> BChan Event -> IO ()
-musicPlayerThread reqChan evChan = do
+musicPlayerThread :: BChan Request -> BChan Event -> TVar Bool -> IO ()
+musicPlayerThread reqChan evChan spectrumEnabled = do
   -- Initialize stored configs
   configs <- runExceptT (Stored.read Stored.Configs) >>= either panic pure
   eqConfigs <- runExceptT loadEQConfigs >>= either panic pure
@@ -156,6 +157,7 @@ musicPlayerThread reqChan evChan = do
             )
           >> pure Nothing
       SignalQuit -> do
+        atomically $ writeTVar spectrumEnabled False
         res <- Just <$> withMPD ip port MPD.stop
         postEvent Halt
         pure res
@@ -177,6 +179,10 @@ musicPlayerThread reqChan evChan = do
         runExceptT
           (restartAudioServer PipeWire)
           >>= either panic pure
+        pure Nothing
+      TriggerSpectrum enabled -> do
+        atomically $ writeTVar spectrumEnabled enabled
+        unless enabled $ postEvent $ UpdateSpectrum Vec.empty
         pure Nothing
       -- This is matched when the app starts.
       -- It loads everything that is needed for the UI.

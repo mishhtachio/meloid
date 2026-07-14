@@ -32,6 +32,7 @@ $defs:
       - trackList
       - currentQueue
       - equalizer
+      - spectrum
       - placeholder
   layoutHBox:
     type: object

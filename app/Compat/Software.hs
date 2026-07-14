@@ -10,18 +10,25 @@ module Compat.Software (
   updateModuleEQId,
   restartMPDServer,
   restartAudioServer,
+  spectrumUpdatingThread,
   extractExtraInfo,
   getMPDProcessId,
   getMPDSocket,
 ) where
 
 import Brick qualified as B
+import Brick.BChan (BChan, writeBChan)
+import Control.Concurrent (threadDelay)
+import Control.Concurrent.STM (TVar, atomically, readTVar)
 import Control.Exception
-import Control.Monad (unless, void, when)
+import Control.Monad (forever, replicateM, unless, void, when)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Except
 import Data.Aeson qualified as JSON
 import Data.Aeson.KeyMap qualified as JSON
+import Data.Binary.Get (getFloatle, runGet)
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy.Char8 qualified as BL8
 import Data.List (uncons)
 import Data.Maybe (catMaybes)
@@ -33,7 +40,9 @@ import Language.Haskell.TH.Syntax
 import Lens.Micro.Mtl
 import Network.MPD qualified as MPD
 import System.Directory
-import System.FilePath (isAbsolute, isRelative, makeRelative, splitDirectories, (</>))
+import System.FilePath (isAbsolute, isRelative, makeRelative, normalise, splitDirectories, (</>))
+import System.IO (hSetBinaryMode)
+import System.Process (CreateProcess (..), StdStream (..))
 import System.Process qualified as Sys
 import Text.Printf (printf)
 import Text.Read (readEither, readMaybe)
@@ -55,6 +64,84 @@ instance Read SocketType where
 
 instance Show AudioServer where
   show PipeWire = "pipewire"
+
+{- | Capture the post-EQ PipeWire sink and publish logarithmic dBFS bands.
+The request worker owns the enable flag so this thread never consumes MPD
+requests directly.
+-}
+spectrumUpdatingThread :: BChan Event -> TVar Bool -> IO ()
+spectrumUpdatingThread evChan enabled = forever $ do
+  active <- atomically $ readTVar enabled
+  if not active
+    then threadDelay 100000
+    else do
+      void . tryJust @IOException (const $ Just ()) $
+        Sys.withCreateProcess captureProcess $ \_ output _ _ ->
+          case output of
+            Nothing -> pure ()
+            Just handle' -> do
+              hSetBinaryMode handle' True
+              let go = do
+                    running <- atomically $ readTVar enabled
+                    when running $ do
+                      bytes <- BS.hGet handle' (2048 * 2 * 4)
+                      when (BS.length bytes == 2048 * 2 * 4) $ do
+                        writeBChan evChan $ UpdateSpectrum $ spectrumLevels bytes
+                        go
+              go
+      threadDelay 1000000
+ where
+  captureProcess =
+    ( Sys.proc
+        "pw-cat"
+        [ "--record"
+        , "--raw"
+        , "--format"
+        , "f32"
+        , "--rate"
+        , "48000"
+        , "--channels"
+        , "2"
+        , "--channel-map"
+        , "FL,FR"
+        , "--latency"
+        , "20ms"
+        , "--target"
+        , "meloid_eq"
+        , "--properties"
+        , "{\"node.name\":\"meloid_spectrum\",\"media.category\":\"Monitor\",\"media.role\":\"DSP\",\"stream.capture.sink\":\"true\",\"stream.monitor\":\"true\"}"
+        , "-"
+        ]
+    )
+      { std_in = NoStream
+      , std_out = CreatePipe
+      , std_err = NoStream
+      }
+
+  spectrumLevels bytes =
+    Vec.generate 64 $ \band ->
+      let frequency = 30 * (18000 / 30) ** ((fromIntegral band + 0.5) / 64)
+          (leftReal, leftImag, rightReal, rightImag) =
+            foldl'
+              ( \(lr, li, rr, ri) (index, (left, right)) ->
+                  let weight = 0.5 * (1 - cos (2 * pi * fromIntegral index / 2047))
+                      phase = 2 * pi * frequency * fromIntegral index / 48000
+                      l = realToFrac left * weight
+                      r = realToFrac right * weight
+                   in (lr + l * cos phase, li + l * sin phase, rr + r * cos phase, ri + r * sin phase)
+              )
+              (0, 0, 0, 0)
+              (zip [0 :: Int ..] frames)
+          amplitude =
+            (2 / windowSum)
+              * sqrt ((leftReal * leftReal + leftImag * leftImag + rightReal * rightReal + rightImag * rightImag) / 2)
+       in max (-90) $ 20 * logBase 10 (max 1.0e-9 amplitude)
+   where
+    frames =
+      runGet
+        (replicateM 2048 ((,) <$> getFloatle <*> getFloatle))
+        (BL.fromStrict bytes)
+    windowSum = sum [0.5 * (1 - cos (2 * pi * fromIntegral index / 2047)) | index <- [0 :: Int .. 2047]]
 
 readProcess :: FilePath -> [String] -> String -> ExceptT String IO String
 readProcess cmd args input =
@@ -155,8 +242,8 @@ extractExtraInfo MPD.Song{MPD.sgFilePath = path} = do
       pure
       (parseSongFileExtraInfo fileSize decoded)
 
-{- | Resolve an MPD-relative song path without allowing it to escape the
-configured music directory, including through symlinks.
+{- | Resolve an MPD-relative song path without allowing lexical
+path traversal outside the configured music directory.
 -}
 resolveMusicFile :: FilePath -> FilePath -> ExceptT String IO FilePath
 resolveMusicFile musicDir songPath
@@ -164,10 +251,10 @@ resolveMusicFile musicDir songPath
   | isAbsolute songPath = throwE "MPD returned an absolute song path"
   | otherwise = do
       root <- canonicalize musicDir
-      candidate <- canonicalize (root </> songPath)
-      unless (isDescendantOf root candidate) $
+      let requested = normalise (root </> songPath)
+      unless (isDescendantOf root requested) $
         throwE "MPD song path is outside music_directory"
-      pure candidate
+      canonicalize requested
  where
   canonicalize path =
     ExceptT $

@@ -8,6 +8,7 @@ module Widgets (
   module Widgets.Layer,
   module Widgets.Image,
   module Widgets.Visual.EQ,
+  module Widgets.Visual.Spectrum,
 )
 where
 
@@ -19,3 +20,4 @@ import Widgets.Layer
 import Widgets.Lists
 import Widgets.Views
 import Widgets.Visual.EQ
+import Widgets.Visual.Spectrum

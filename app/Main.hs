@@ -14,8 +14,10 @@ import Brick.Types (
  )
 import Brick.Widgets.Edit qualified as E
 import Compat.Image qualified as Image
+import Compat.Software (spectrumUpdatingThread)
 import Compat.Term qualified as Term
 import Control.Concurrent (forkIO)
+import Control.Concurrent.STM (newTVarIO)
 import Control.Monad (void)
 import Control.Monad.State (execState)
 import Data.Map qualified as Map
@@ -52,9 +54,11 @@ main = do
   chan <- newBChan 2048
   -- Request channel (send requests to the MPD backend)
   requestChan <- newBChan 2048
+  spectrumEnabled <- newTVarIO False
   -- Image service (the terminal image backend)
   imageService <- Image.startImageService chan
-  void $ forkIO $ Sys.musicPlayerThread requestChan chan
+  void $ forkIO $ Sys.musicPlayerThread requestChan chan spectrumEnabled
+  void $ forkIO $ spectrumUpdatingThread chan spectrumEnabled
 
   -- Make a Vty interface with mouse and image overlay support
   let mkVty = do
@@ -125,6 +129,7 @@ defaultSt =
           , _psCurrentQueue = Vec.empty
           , _psPaused = False
           }
+    , _stSpectrum = SpectrumSt Vec.empty
     , _stLogs = []
     , _stChannel = Nothing
     , _stImageCache = Map.empty
