@@ -25,9 +25,9 @@ Roadmap
 [x] Play music
 [ ] Vim-like commands and mode switch
 [ ] Mouseless support (Tab-based focus ring)
-[ ] A setting layout
+[x] A setting layout
 [ ] Custom output device and software
-[ ] Spectrum/Frequency visualizer
+[x] Spectrum/Frequency visualizer
 [ ] Equalizer
 [ ] Dynamic volume adjustion
 [ ] Viewport for live lyrics
